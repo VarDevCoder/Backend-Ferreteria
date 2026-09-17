@@ -1,8 +1,8 @@
 """Configuración de la aplicación, leída desde variables de entorno.
 
-Un único punto de verdad para todo lo configurable: URL de base de datos,
-secretos de JWT y orígenes permitidos de CORS. Nada de valores mágicos
-repartidos por el código.
+Un único punto de verdad para todo lo configurable: URL de base de datos y
+orígenes permitidos de CORS. Sin login no hay secretos que manejar. Nada de
+valores mágicos repartidos por el código.
 """
 from functools import lru_cache
 
@@ -16,13 +16,8 @@ class Settings(BaseSettings):
     environment: str = "development"
 
     # Postgres (Neon en producción). Ej:
-    # postgresql+pg8000://usuario:password@host/dbname?ssl=true
+    # postgresql+pg8000://usuario:password@host/dbname?ssl_context=true
     database_url: str = "postgresql+pg8000://ankor:ankor@localhost:5432/ankor"
-
-    # JWT
-    secret_key: str = "change-me-in-.env-this-is-not-secure"
-    jwt_algorithm: str = "HS256"
-    access_token_expire_minutes: int = 60 * 12  # 12 horas, cómodo para una demo
 
     # CORS: dominios del frontend (Netlify) autorizados a llamar la API
     cors_origins: str = "http://localhost:5500,http://127.0.0.1:5500"
