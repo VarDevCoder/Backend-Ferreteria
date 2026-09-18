@@ -1,4 +1,6 @@
 """Repositorios de Cliente, Proveedor y su catálogo de productos ofrecidos."""
+from __future__ import annotations
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
