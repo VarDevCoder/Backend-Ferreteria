@@ -1,4 +1,6 @@
 """Repositorios de Categoría y Producto (el catálogo)."""
+from __future__ import annotations
+
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
