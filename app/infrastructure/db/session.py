@@ -9,8 +9,10 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import get_settings
 
-_SSL_PARAMS = ("ssl_context", "ssl")
-_SSL_ACTIVO = {"true", "1", "require"}
+_SSL_PARAMS = ("ssl_context", "ssl", "sslmode")
+_SSL_ACTIVO = {"true", "1", "require", "verify-ca", "verify-full"}
+# Parámetros de libpq que pg8000 no entiende (vienen en la URL que copia Neon).
+_PARAMS_IGNORADOS = ("channel_binding",)
 
 
 def engine_args(database_url: str) -> tuple[URL, dict[str, Any]]:
@@ -23,10 +25,9 @@ def engine_args(database_url: str) -> tuple[URL, dict[str, Any]]:
     url = make_url(database_url)
     connect_args: dict[str, Any] = {}
     flag = next((url.query[p] for p in _SSL_PARAMS if p in url.query), None)
-    if flag is not None:
-        url = url.difference_update_query(_SSL_PARAMS)
-        if str(flag).lower() in _SSL_ACTIVO:
-            connect_args["ssl_context"] = ssl.create_default_context()
+    url = url.difference_update_query(_SSL_PARAMS + _PARAMS_IGNORADOS)
+    if flag is not None and str(flag).lower() in _SSL_ACTIVO:
+        connect_args["ssl_context"] = ssl.create_default_context()
     return url, connect_args
 
 
