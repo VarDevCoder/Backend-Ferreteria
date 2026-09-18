@@ -2,7 +2,7 @@ import sys
 from logging.config import fileConfig
 from pathlib import Path
 
-from sqlalchemy import engine_from_config
+from sqlalchemy import create_engine
 from sqlalchemy import pool
 
 from alembic import context
@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.core.config import get_settings  # noqa: E402
 from app.infrastructure.db.models import Base  # noqa: E402
+from app.infrastructure.db.session import engine_args  # noqa: E402
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -66,11 +67,9 @@ def run_migrations_online() -> None:
     and associate a connection with the context.
 
     """
-    connectable = engine_from_config(
-        config.get_section(config.config_ini_section, {}),
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
-    )
+    # Mismo tratamiento de SSL que la app (pg8000 necesita un SSLContext real).
+    url, connect_args = engine_args(get_settings().database_url)
+    connectable = create_engine(url, connect_args=connect_args, poolclass=pool.NullPool)
 
     with connectable.connect() as connection:
         context.configure(
