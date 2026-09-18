@@ -13,11 +13,14 @@ from datetime import date, datetime
 from decimal import Decimal
 
 from app.domain.enums import (
+    EstadoCajaTurno,
     EstadoOrdenCompra,
     EstadoOrdenEnvio,
     EstadoPedidoCliente,
     EstadoSolicitudPresupuesto,
+    MetodoPago,
     RolUsuario,
+    TipoMovimientoCaja,
     TipoMovimientoInventario,
     TipoReferenciaMovimiento,
 )
@@ -368,3 +371,82 @@ class MovimientoInventario:
     usuario_id: int | None = None
     observaciones: str | None = None
     created_at: datetime | None = None
+
+
+@dataclass
+class MovimientoCaja:
+    id: int | None
+    caja_turno_id: int
+    tipo: TipoMovimientoCaja
+    monto: int
+    motivo: str | None = None
+    usuario_id: int | None = None
+    created_at: datetime | None = None
+
+
+@dataclass
+class CajaTurno:
+    id: int | None
+    usuario_id: int
+    fondo_inicial: int = 0
+    estado: EstadoCajaTurno = EstadoCajaTurno.ABIERTO
+    fecha_apertura: datetime | None = None
+    fecha_cierre: datetime | None = None
+    total_ventas_efectivo: int = 0
+    total_ventas_tarjeta: int = 0
+    total_ventas_transferencia: int = 0
+    conteo_fisico: int | None = None
+    diferencia: int | None = None
+    notas: str | None = None
+    movimientos: list[MovimientoCaja] = field(default_factory=list)
+
+    def puede_registrar_ventas(self) -> bool:
+        return self.estado == EstadoCajaTurno.ABIERTO
+
+    def puede_cerrarse(self) -> bool:
+        return self.estado == EstadoCajaTurno.ABIERTO
+
+    def saldo_esperado(self) -> int:
+        ingresos = sum(m.monto for m in self.movimientos if m.tipo == TipoMovimientoCaja.INGRESO)
+        retiros = sum(m.monto for m in self.movimientos if m.tipo == TipoMovimientoCaja.RETIRO)
+        return self.fondo_inicial + self.total_ventas_efectivo + ingresos - retiros
+
+    def calcular_cierre(self, conteo_fisico: int) -> None:
+        self.conteo_fisico = conteo_fisico
+        self.diferencia = conteo_fisico - self.saldo_esperado()
+        self.estado = EstadoCajaTurno.CERRADO
+
+
+@dataclass
+class VentaMostradorItem:
+    id: int | None
+    venta_id: int | None
+    producto_id: int
+    cantidad: Decimal
+    precio_unitario: int
+    subtotal: int = 0
+
+    def calcular_subtotal(self) -> int:
+        self.subtotal = int(round(self.cantidad * self.precio_unitario))
+        return self.subtotal
+
+
+@dataclass
+class VentaMostrador:
+    id: int | None
+    numero: str
+    caja_turno_id: int
+    usuario_id: int
+    cliente_id: int | None = None
+    metodo_pago: MetodoPago = MetodoPago.EFECTIVO
+    subtotal: int = 0
+    descuento: int = 0
+    total: int = 0
+    notas: str | None = None
+    created_at: datetime | None = None
+    items: list[VentaMostradorItem] = field(default_factory=list)
+
+    def calcular_totales(self) -> None:
+        self.subtotal = sum(item.calcular_subtotal() for item in self.items)
+        descuento_monto = int(round(self.subtotal * self.descuento / 100))
+        self.total = max(0, self.subtotal - descuento_monto)

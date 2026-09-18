@@ -2,9 +2,6 @@ import sys
 from logging.config import fileConfig
 from pathlib import Path
 
-from sqlalchemy import engine_from_config
-from sqlalchemy import pool
-
 from alembic import context
 
 # Permite importar `app.*` al correr `alembic` desde la raíz del proyecto.
@@ -12,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.core.config import get_settings  # noqa: E402
 from app.infrastructure.db.models import Base  # noqa: E402
+from app.infrastructure.db.session import _build_engine  # noqa: E402
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -66,11 +64,7 @@ def run_migrations_online() -> None:
     and associate a connection with the context.
 
     """
-    connectable = engine_from_config(
-        config.get_section(config.config_ini_section, {}),
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
-    )
+    connectable = _build_engine(config.get_main_option("sqlalchemy.url"))
 
     with connectable.connect() as connection:
         context.configure(

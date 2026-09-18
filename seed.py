@@ -115,9 +115,9 @@ def main() -> None:
             print("Proveedores creados (usuario/clave: ver arriba, password 'proveedor123')")
 
             for p in productos_creados[:5]:
-                catalogo.crear(prov_1.id, p.id, precio=int(p.precio_compra * 0.95), tiempo_entrega_dias=3, disponible=True)
+                catalogo.crear(prov_1.id, p.id, precio=int(p.precio_compra * 0.95), tiempo_entrega_dias=3)
             for p in productos_creados[2:4]:
-                catalogo.crear(prov_2.id, p.id, precio=int(p.precio_compra * 0.9), tiempo_entrega_dias=2, disponible=True)
+                catalogo.crear(prov_2.id, p.id, precio=int(p.precio_compra * 0.9), tiempo_entrega_dias=2)
             print("Catálogo de proveedores cargado")
         else:
             prov_1, prov_2 = proveedores_repo.list()[:2]

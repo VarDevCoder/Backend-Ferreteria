@@ -75,3 +75,22 @@ class TipoReferenciaMovimiento(StrEnum):
     ORDEN_COMPRA = "ORDEN_COMPRA"
     ORDEN_ENVIO = "ORDEN_ENVIO"
     AJUSTE_MANUAL = "AJUSTE_MANUAL"
+    VENTA_MOSTRADOR = "VENTA_MOSTRADOR"
+
+
+class EstadoCajaTurno(StrEnum):
+    ABIERTO = "ABIERTO"
+    CERRADO = "CERRADO"
+
+
+class MetodoPago(StrEnum):
+    EFECTIVO = "EFECTIVO"
+    TARJETA = "TARJETA"
+    TRANSFERENCIA = "TRANSFERENCIA"
+
+
+class TipoMovimientoCaja(StrEnum):
+    """Movimientos de efectivo dentro de un turno que no son una venta."""
+
+    INGRESO = "INGRESO"
+    RETIRO = "RETIRO"

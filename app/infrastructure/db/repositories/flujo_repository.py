@@ -11,6 +11,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.domain.entities import (
+    CajaTurno,
+    MovimientoCaja,
     MovimientoInventario,
     OrdenCompra,
     OrdenCompraItem,
@@ -20,16 +22,23 @@ from app.domain.entities import (
     PedidoClienteItem,
     SolicitudPresupuesto,
     SolicitudPresupuestoItem,
+    VentaMostrador,
+    VentaMostradorItem,
 )
 from app.domain.enums import (
+    EstadoCajaTurno,
     EstadoOrdenCompra,
     EstadoOrdenEnvio,
     EstadoPedidoCliente,
     EstadoSolicitudPresupuesto,
+    MetodoPago,
+    TipoMovimientoCaja,
     TipoMovimientoInventario,
     TipoReferenciaMovimiento,
 )
 from app.infrastructure.db.models import (
+    CajaTurnoModel,
+    MovimientoCajaModel,
     MovimientoInventarioModel,
     OrdenCompraItemModel,
     OrdenCompraModel,
@@ -39,6 +48,8 @@ from app.infrastructure.db.models import (
     PedidoClienteModel,
     SolicitudPresupuestoItemModel,
     SolicitudPresupuestoModel,
+    VentaMostradorItemModel,
+    VentaMostradorModel,
 )
 
 
@@ -628,4 +639,191 @@ class SqlAlchemyMovimientoInventarioRepository:
             usuario_id=row.usuario_id,
             observaciones=row.observaciones,
             created_at=row.created_at,
+        )
+
+
+class SqlAlchemyCajaTurnoRepository:
+    def __init__(self, session: Session):
+        self._session = session
+
+    def get_by_id(self, turno_id: int) -> CajaTurno | None:
+        row = self._session.get(CajaTurnoModel, turno_id, options=[selectinload(CajaTurnoModel.movimientos)])
+        return self._to_entity(row) if row else None
+
+    def get_abierto(self) -> CajaTurno | None:
+        stmt = (
+            select(CajaTurnoModel)
+            .options(selectinload(CajaTurnoModel.movimientos))
+            .where(CajaTurnoModel.estado == EstadoCajaTurno.ABIERTO)
+            .order_by(CajaTurnoModel.fecha_apertura.desc())
+        )
+        row = self._session.execute(stmt).unique().scalars().first()
+        return self._to_entity(row) if row else None
+
+    def list(self, limit: int | None = None) -> list[CajaTurno]:
+        stmt = (
+            select(CajaTurnoModel)
+            .options(selectinload(CajaTurnoModel.movimientos))
+            .order_by(CajaTurnoModel.fecha_apertura.desc())
+        )
+        if limit:
+            stmt = stmt.limit(limit)
+        rows = self._session.execute(stmt).unique().scalars().all()
+        return [self._to_entity(r) for r in rows]
+
+    def add(self, turno: CajaTurno) -> CajaTurno:
+        row = CajaTurnoModel(usuario_id=turno.usuario_id, fondo_inicial=turno.fondo_inicial, estado=turno.estado.value)
+        self._session.add(row)
+        self._session.flush()
+        return self._to_entity(row)
+
+    def update(self, turno: CajaTurno) -> CajaTurno:
+        row = self._session.get(CajaTurnoModel, turno.id, options=[selectinload(CajaTurnoModel.movimientos)])
+        if row is None:
+            raise ValueError(f"CajaTurno {turno.id} no existe")
+        row.estado = turno.estado.value
+        row.fecha_cierre = turno.fecha_cierre
+        row.conteo_fisico = turno.conteo_fisico
+        row.diferencia = turno.diferencia
+        row.notas = turno.notas
+        self._session.flush()
+        return self._to_entity(row)
+
+    def agregar_movimiento(self, movimiento: MovimientoCaja) -> MovimientoCaja:
+        row = MovimientoCajaModel(
+            caja_turno_id=movimiento.caja_turno_id,
+            tipo=movimiento.tipo.value,
+            monto=movimiento.monto,
+            motivo=movimiento.motivo,
+            usuario_id=movimiento.usuario_id,
+        )
+        self._session.add(row)
+        self._session.flush()
+        return MovimientoCaja(
+            id=row.id, caja_turno_id=row.caja_turno_id, tipo=TipoMovimientoCaja(row.tipo), monto=row.monto,
+            motivo=row.motivo, usuario_id=row.usuario_id, created_at=row.created_at,
+        )
+
+    def acumular_venta(self, turno_id: int, metodo_pago: str, monto: int) -> None:
+        row = self._session.get(CajaTurnoModel, turno_id)
+        if row is None:
+            raise ValueError(f"CajaTurno {turno_id} no existe")
+        if metodo_pago == MetodoPago.EFECTIVO:
+            row.total_ventas_efectivo += monto
+        elif metodo_pago == MetodoPago.TARJETA:
+            row.total_ventas_tarjeta += monto
+        else:
+            row.total_ventas_transferencia += monto
+        self._session.flush()
+
+    @staticmethod
+    def _to_entity(row: CajaTurnoModel) -> CajaTurno:
+        return CajaTurno(
+            id=row.id,
+            usuario_id=row.usuario_id,
+            fondo_inicial=row.fondo_inicial,
+            estado=EstadoCajaTurno(row.estado),
+            fecha_apertura=row.fecha_apertura,
+            fecha_cierre=row.fecha_cierre,
+            total_ventas_efectivo=row.total_ventas_efectivo,
+            total_ventas_tarjeta=row.total_ventas_tarjeta,
+            total_ventas_transferencia=row.total_ventas_transferencia,
+            conteo_fisico=row.conteo_fisico,
+            diferencia=row.diferencia,
+            notas=row.notas,
+            movimientos=[
+                MovimientoCaja(
+                    id=m.id, caja_turno_id=m.caja_turno_id, tipo=TipoMovimientoCaja(m.tipo), monto=m.monto,
+                    motivo=m.motivo, usuario_id=m.usuario_id, created_at=m.created_at,
+                )
+                for m in row.movimientos
+            ],
+        )
+
+
+class SqlAlchemyVentaMostradorRepository:
+    def __init__(self, session: Session):
+        self._session = session
+
+    def list(self, caja_turno_id: int | None = None, limit: int | None = None) -> list[VentaMostrador]:
+        stmt = (
+            select(VentaMostradorModel)
+            .options(selectinload(VentaMostradorModel.items))
+            .order_by(VentaMostradorModel.created_at.desc())
+        )
+        if caja_turno_id is not None:
+            stmt = stmt.where(VentaMostradorModel.caja_turno_id == caja_turno_id)
+        if limit:
+            stmt = stmt.limit(limit)
+        rows = self._session.execute(stmt).unique().scalars().all()
+        return [self._to_entity(r) for r in rows]
+
+    def get_by_id(self, venta_id: int) -> VentaMostrador | None:
+        row = self._session.get(VentaMostradorModel, venta_id, options=[selectinload(VentaMostradorModel.items)])
+        return self._to_entity(row) if row else None
+
+    def add(self, venta: VentaMostrador) -> VentaMostrador:
+        row = VentaMostradorModel(
+            numero=venta.numero,
+            caja_turno_id=venta.caja_turno_id,
+            usuario_id=venta.usuario_id,
+            cliente_id=venta.cliente_id,
+            metodo_pago=venta.metodo_pago.value,
+            subtotal=venta.subtotal,
+            descuento=venta.descuento,
+            total=venta.total,
+            notas=venta.notas,
+            items=[
+                VentaMostradorItemModel(
+                    producto_id=i.producto_id, cantidad=i.cantidad, precio_unitario=i.precio_unitario,
+                    subtotal=i.subtotal,
+                )
+                for i in venta.items
+            ],
+        )
+        self._session.add(row)
+        self._session.flush()
+        return self._to_entity(row)
+
+    def siguiente_numero(self) -> str:
+        anio = int(self._session.execute(select(func.extract("year", func.current_date()))).scalar_one())
+        stmt = select(func.count()).select_from(VentaMostradorModel).where(
+            func.extract("year", VentaMostradorModel.created_at) == anio
+        )
+        cantidad = self._session.execute(stmt).scalar_one()
+        return f"VTA-{anio}-{cantidad + 1:04d}"
+
+    def contar_hoy(self) -> int:
+        stmt = select(func.count()).select_from(VentaMostradorModel).where(
+            func.date(VentaMostradorModel.created_at) == func.current_date()
+        )
+        return self._session.execute(stmt).scalar_one()
+
+    def total_hoy(self) -> int:
+        stmt = select(func.coalesce(func.sum(VentaMostradorModel.total), 0)).where(
+            func.date(VentaMostradorModel.created_at) == func.current_date()
+        )
+        return self._session.execute(stmt).scalar_one()
+
+    @staticmethod
+    def _to_entity(row: VentaMostradorModel) -> VentaMostrador:
+        return VentaMostrador(
+            id=row.id,
+            numero=row.numero,
+            caja_turno_id=row.caja_turno_id,
+            usuario_id=row.usuario_id,
+            cliente_id=row.cliente_id,
+            metodo_pago=MetodoPago(row.metodo_pago),
+            subtotal=row.subtotal,
+            descuento=row.descuento,
+            total=row.total,
+            notas=row.notas,
+            created_at=row.created_at,
+            items=[
+                VentaMostradorItem(
+                    id=i.id, venta_id=i.venta_id, producto_id=i.producto_id, cantidad=i.cantidad,
+                    precio_unitario=i.precio_unitario, subtotal=i.subtotal,
+                )
+                for i in row.items
+            ],
         )

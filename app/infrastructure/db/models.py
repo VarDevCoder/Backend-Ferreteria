@@ -289,3 +289,71 @@ class MovimientoInventarioModel(Base):
     usuario_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True)
     observaciones: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
+
+
+class CajaTurnoModel(Base):
+    __tablename__ = "caja_turnos"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    usuario_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id"))
+    fondo_inicial: Mapped[int] = mapped_column(Integer, default=0)
+    estado: Mapped[str] = mapped_column(String(10), default="ABIERTO", index=True)
+    fecha_apertura: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    fecha_cierre: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    total_ventas_efectivo: Mapped[int] = mapped_column(Integer, default=0)
+    total_ventas_tarjeta: Mapped[int] = mapped_column(Integer, default=0)
+    total_ventas_transferencia: Mapped[int] = mapped_column(Integer, default=0)
+    conteo_fisico: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    diferencia: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    notas: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    movimientos: Mapped[list["MovimientoCajaModel"]] = relationship(
+        back_populates="turno", cascade="all, delete-orphan"
+    )
+
+
+class MovimientoCajaModel(Base):
+    __tablename__ = "movimientos_caja"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    caja_turno_id: Mapped[int] = mapped_column(ForeignKey("caja_turnos.id", ondelete="CASCADE"))
+    tipo: Mapped[str] = mapped_column(String(10))
+    monto: Mapped[int] = mapped_column(Integer)
+    motivo: Mapped[str | None] = mapped_column(Text, nullable=True)
+    usuario_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    turno: Mapped[CajaTurnoModel] = relationship(back_populates="movimientos")
+
+
+class VentaMostradorModel(Base):
+    __tablename__ = "ventas_mostrador"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    numero: Mapped[str] = mapped_column(String(50), unique=True)
+    caja_turno_id: Mapped[int] = mapped_column(ForeignKey("caja_turnos.id", ondelete="RESTRICT"), index=True)
+    usuario_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id"))
+    cliente_id: Mapped[int | None] = mapped_column(ForeignKey("clientes.id", ondelete="SET NULL"), nullable=True)
+    metodo_pago: Mapped[str] = mapped_column(String(20), default="EFECTIVO")
+    subtotal: Mapped[int] = mapped_column(Integer, default=0)
+    descuento: Mapped[int] = mapped_column(Integer, default=0)
+    total: Mapped[int] = mapped_column(Integer, default=0)
+    notas: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
+
+    items: Mapped[list["VentaMostradorItemModel"]] = relationship(
+        back_populates="venta", cascade="all, delete-orphan"
+    )
+
+
+class VentaMostradorItemModel(Base):
+    __tablename__ = "venta_mostrador_items"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    venta_id: Mapped[int] = mapped_column(ForeignKey("ventas_mostrador.id", ondelete="CASCADE"))
+    producto_id: Mapped[int] = mapped_column(ForeignKey("productos.id"))
+    cantidad: Mapped[float] = mapped_column(Numeric(12, 3))
+    precio_unitario: Mapped[int] = mapped_column(Integer)
+    subtotal: Mapped[int] = mapped_column(Integer, default=0)
+
+    venta: Mapped[VentaMostradorModel] = relationship(back_populates="items")

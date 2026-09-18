@@ -19,6 +19,7 @@ from app.domain.exceptions import (
     UsuarioInactivo,
 )
 from app.interfaces.api.routers import (
+    caja,
     catalogo,
     contactos,
     dashboard,
@@ -71,6 +72,7 @@ app.include_router(ordenes_compra.router, prefix="/api/v1")
 app.include_router(ordenes_envio.router, prefix="/api/v1")
 app.include_router(inventario.router, prefix="/api/v1")
 app.include_router(dashboard.router, prefix="/api/v1")
+app.include_router(caja.router, prefix="/api/v1")
 
 
 @app.get("/", tags=["Salud"], summary="Chequeo de salud")

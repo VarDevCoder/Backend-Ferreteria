@@ -13,6 +13,7 @@ from typing import Annotated
 from fastapi import Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.application.services.caja_service import CajaService
 from app.application.services.catalogo_service import CategoriaService, ProductoService
 from app.application.services.contactos_service import ClienteService, ProveedorProductoService, ProveedorService
 from app.application.services.dashboard_service import DashboardService
@@ -29,11 +30,13 @@ from app.infrastructure.db.repositories.contactos_repository import (
     SqlAlchemyProveedorRepository,
 )
 from app.infrastructure.db.repositories.flujo_repository import (
+    SqlAlchemyCajaTurnoRepository,
     SqlAlchemyMovimientoInventarioRepository,
     SqlAlchemyOrdenCompraRepository,
     SqlAlchemyOrdenEnvioRepository,
     SqlAlchemyPedidoClienteRepository,
     SqlAlchemySolicitudPresupuestoRepository,
+    SqlAlchemyVentaMostradorRepository,
 )
 from app.infrastructure.db.repositories.usuario_repository import SqlAlchemyUsuarioRepository
 from app.infrastructure.db.session import get_db
@@ -87,6 +90,14 @@ def get_orden_envio_repo(db: DbSession) -> SqlAlchemyOrdenEnvioRepository:
 
 def get_movimiento_repo(db: DbSession) -> SqlAlchemyMovimientoInventarioRepository:
     return SqlAlchemyMovimientoInventarioRepository(db)
+
+
+def get_caja_turno_repo(db: DbSession) -> SqlAlchemyCajaTurnoRepository:
+    return SqlAlchemyCajaTurnoRepository(db)
+
+
+def get_venta_mostrador_repo(db: DbSession) -> SqlAlchemyVentaMostradorRepository:
+    return SqlAlchemyVentaMostradorRepository(db)
 
 
 # --- Servicios (casos de uso) ----------------------------------------------------
@@ -157,6 +168,15 @@ def get_inventario_service(
     movimientos: Annotated[SqlAlchemyMovimientoInventarioRepository, Depends(get_movimiento_repo)],
 ) -> InventarioService:
     return InventarioService(productos, movimientos)
+
+
+def get_caja_service(
+    turnos: Annotated[SqlAlchemyCajaTurnoRepository, Depends(get_caja_turno_repo)],
+    ventas: Annotated[SqlAlchemyVentaMostradorRepository, Depends(get_venta_mostrador_repo)],
+    productos: Annotated[SqlAlchemyProductoRepository, Depends(get_producto_repo)],
+    movimientos: Annotated[SqlAlchemyMovimientoInventarioRepository, Depends(get_movimiento_repo)],
+) -> CajaService:
+    return CajaService(turnos, ventas, productos, movimientos)
 
 
 def get_dashboard_service(
