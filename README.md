@@ -137,3 +137,62 @@ curl https://ankor-backend.vercel.app/api/v1/dashboard
 - **`TypeError: 'function' object is not subscriptable` al arrancar** — un repositorio define un
   método `list()` y usa `list[...]` en anotaciones. En Python 3.14 funciona por la evaluación diferida
   de anotaciones, pero en 3.12 no. Los módulos con un método `list` llevan `from __future__ import annotations`.
+- **Stock negativo en venta de mostrador** — `CajaService.registrar_venta` valida el stock línea por
+  línea. Si el mismo producto va en dos líneas, cada una pasa el control y el stock puede quedar negativo.
+  *Pendiente de corregir* (Fase 0 del plan).
+- **Precio de venta sin control** — `POST /caja/ventas` acepta el `precio_unitario` que manda el
+  frontend sin validarlo. *Pendiente* (se resuelve con las listas de precios, Fase 1).
+
+## Análisis y hoja de ruta
+
+El análisis completo está en [`docs/analisis-requerimientos.md`](docs/analisis-requerimientos.md).
+Compara el sistema con cómo trabaja una ferretería real y cita sus fuentes: Odoo, ERPNext,
+Epicor Eagle, POS latinoamericanos, reseñas de Capterra y G2, una tesis universitaria y el
+APQC PCF Retail.
+
+**Hallazgo principal:** el núcleo del sistema es el flujo de **encargos**
+(pedido → cotización a proveedores → OC → envío), heredado de ANKOR (distribuidor). En una
+ferretería eso es la excepción. El día a día es la **venta de mostrador**, que hoy funciona
+pero es lenta:
+- el producto se elige de un desplegable con todo el catálogo;
+- no hay código de barras;
+- no se ve el total en vivo ni hay ticket.
+
+**Qué ya está bien cubierto:**
+- caja con apertura, ingresos y retiros, y cierre con arqueo;
+- alerta de stock mínimo;
+- kardex;
+- órdenes de compra con recepción parcial;
+- precios por proveedor;
+- flujo de encargos completo.
+
+**Brechas principales:**
+- búsqueda rápida y código de barras en caja;
+- ticket;
+- listas de precios (minorista, mayorista, contratista);
+- devoluciones de mostrador;
+- ajuste de inventario;
+- compra sugerida por stock mín/máx;
+- unidad de compra distinta de la de venta (caja → unidad);
+- presupuesto al cliente;
+- cuenta corriente;
+- reportes (más vendidos, margen, sin movimiento);
+- login y roles;
+- IVA y factura electrónica.
+
+Además: no hay tests automáticos, y `OrdenCompra` no guarda `proveedor_id`.
+
+**Plan por fases** (una funcionalidad a la vez, cada una en su rama, con migración nueva y tests):
+
+| Fase | Contenido |
+|---|---|
+| 0. Base | Tests con pytest y corrección del stock negativo |
+| 1. Vender más rápido | Caja rápida (código de barras, buscador, total y vuelto, ticket) · ajuste de inventario · devoluciones · listas de precios |
+| 2. Stock y compras | OC con `proveedor_id` y costo al recibir · unidades de compra y venta · compra sugerida |
+| 3. Clientes | Presupuesto a cliente → venta · cuenta corriente |
+| 4. Gestión | Reportes · usuarios y roles · IVA y factura electrónica (preparada) |
+
+**Estado:** propuesta. Faltan definiciones de negocio antes de implementar: el país (por la
+moneda y el RUC, probablemente Paraguay), las listas de precios, la política de crédito, los
+equipos (lector e impresora) y si hay varias cajas atendiendo a la vez. Ver la sección 7 del
+documento.
