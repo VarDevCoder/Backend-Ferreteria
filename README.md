@@ -14,11 +14,11 @@ usuario administrador; a partir de ahí todo requiere iniciar sesión.
 |---|---|
 | Runtime | Python 3.12 · FastAPI · SQLAlchemy 2 · Alembic |
 | Base de datos | PostgreSQL (Neon en producción), driver `pg8000` |
-| Hosting | Render (plan Free) — `render.yaml` en la raíz |
+| Hosting | Vercel (plan Hobby) — función serverless en `api/index.py` |
 | Frontend | [Frontend-Ferreteria](https://github.com/VarDevCoder/Frontend-Ferreteria) en Netlify |
 
-**Producción:** https://ankor-backend-mqk4.onrender.com — documentación interactiva en
-[`/docs`](https://ankor-backend-mqk4.onrender.com/docs).
+**Producción:** https://ankor-backend.vercel.app — documentación interactiva en
+[`/docs`](https://ankor-backend.vercel.app/docs).
 
 ---
 
@@ -104,7 +104,7 @@ El detalle de cada ruta, con sus schemas, está en `/docs` (Swagger) y `/redoc`.
 
 ## Desarrollo local
 
-Requiere Python **3.12** (es la versión de Render; ver [Problemas conocidos](#problemas-conocidos)) y un Postgres.
+Requiere Python **3.12** (es la versión de Vercel, fijada en `.python-version`; ver [Problemas conocidos](#problemas-conocidos)) y un Postgres.
 
 ```bash
 python -m venv .venv
@@ -157,32 +157,40 @@ espera pg8000. Usar el host con `-pooler` para la app.
   **No usar en la base de una empresa real**: los usuarios demo tienen contraseña conocida.
 - `python seed.py --demo --reset` **borra todo el esquema** y lo vuelve a crear. No usar contra producción.
 
-## Despliegue en Render
+## Despliegue en Vercel
 
-El servicio se define en `render.yaml` (Blueprint). En cada arranque corre:
+Proyecto `ankor-backend` en la cuenta `vardevcoder`. La app corre como una función
+serverless de Python:
 
+- `api/index.py` importa `app.main:app`; Vercel sirve los archivos de `api/` como funciones.
+- `vercel.json` reescribe todas las rutas (`/(.*)`) hacia `/api/index`, así `/`, `/docs` y
+  `/api/v1/...` llegan a FastAPI.
+- `.python-version` fija Python 3.12. El *Framework Preset* del proyecto es **Other**.
+
+El proyecto **no está conectado a GitHub**: un push no despliega. Se despliega desde la raíz
+del repo con Vercel CLI:
+
+```bash
+vercel link --yes --project ankor-backend   # una sola vez; crea .vercel/ (ignorado)
+vercel --prod
 ```
-alembic upgrade head && python seed.py && uvicorn app.main:app --host 0.0.0.0 --port $PORT
-```
 
-Así la base queda migrada y con datos sin necesitar shell (el plan Free no la tiene).
-Ambos pasos son idempotentes.
-
-- `DATABASE_URL` y `CORS_ORIGINS` están como `sync: false`: se cargan a mano en
-  *Environment* del servicio y no se commitean. `SECRET_KEY` la genera Render al sincronizar
-  el Blueprint; en un servicio ya creado hay que agregarla a mano **antes** del deploy.
-- `seed.py` corre en cada arranque pero no hace nada mientras `SEED_DEMO` sea `false`.
-- El Blueprint está conectado por URL pública del repo, así que **un push no redeploya solo**:
-  hay que usar *Manual Deploy → Deploy latest commit* en el servicio (o *Manual sync* en el
-  Blueprint si cambió `render.yaml`).
-- El plan Free duerme el servicio tras 15 min sin tráfico; el primer request posterior
-  tarda ~30–50 s.
+- `DATABASE_URL`, `CORS_ORIGINS`, `ENVIRONMENT` y **`SECRET_KEY`** se cargan en
+  *Settings → Environment Variables* (o `vercel env add NOMBRE production --value "..."`) y no se
+  commitean. Sin `SECRET_KEY` la app **no arranca** en producción.
+  `DATABASE_URL` usa el host **`-pooler`** de Neon: cada request serverless puede abrir su conexión.
+- **Migraciones y seed no corren en el deploy.** Tras un cambio de esquema, correrlos desde una
+  máquina local contra la URL **directa** de Neon (sin `-pooler`) **antes** de desplegar el código nuevo:
+  `alembic upgrade head`. Los datos de ejemplo son opcionales: `python seed.py --demo`
+  (nunca en la base de un cliente real).
+- En el plan Hobby, Vercel **bloquea** (estado `BLOCKED`) un deploy si el autor del commit en
+  `HEAD` no es el dueño de la cuenta. Desplegar con un commit propio en la punta de la rama.
 
 Verificación rápida:
 
 ```bash
-curl https://ankor-backend-mqk4.onrender.com/                 # {"status":"ok",...}
-curl https://ankor-backend-mqk4.onrender.com/api/v1/empresa   # datos públicos de la empresa
+curl https://ankor-backend.vercel.app/                 # {"status":"ok",...}
+curl https://ankor-backend.vercel.app/api/v1/empresa   # datos públicos de la empresa
 ```
 
 ## Problemas conocidos
@@ -192,3 +200,62 @@ curl https://ankor-backend-mqk4.onrender.com/api/v1/empresa   # datos públicos 
 - **`TypeError: 'function' object is not subscriptable` al arrancar** — un repositorio define un
   método `list()` y usa `list[...]` en anotaciones. En Python 3.14 funciona por la evaluación diferida
   de anotaciones, pero en 3.12 no. Los módulos con un método `list` llevan `from __future__ import annotations`.
+- **Stock negativo en venta de mostrador** — `CajaService.registrar_venta` valida el stock línea por
+  línea. Si el mismo producto va en dos líneas, cada una pasa el control y el stock puede quedar negativo.
+  *Pendiente de corregir* (Fase 0 del plan).
+- **Precio de venta sin control** — `POST /caja/ventas` acepta el `precio_unitario` que manda el
+  frontend sin validarlo. *Pendiente* (se resuelve con las listas de precios, Fase 1).
+
+## Análisis y hoja de ruta
+
+El análisis completo está en [`docs/analisis-requerimientos.md`](docs/analisis-requerimientos.md).
+Compara el sistema con cómo trabaja una ferretería real y cita sus fuentes: Odoo, ERPNext,
+Epicor Eagle, POS latinoamericanos, reseñas de Capterra y G2, una tesis universitaria y el
+APQC PCF Retail.
+
+**Hallazgo principal:** el núcleo del sistema es el flujo de **encargos**
+(pedido → cotización a proveedores → OC → envío), heredado de ANKOR (distribuidor). En una
+ferretería eso es la excepción. El día a día es la **venta de mostrador**, que hoy funciona
+pero es lenta:
+- el producto se elige de un desplegable con todo el catálogo;
+- no hay código de barras;
+- no se ve el total en vivo ni hay ticket.
+
+**Qué ya está bien cubierto:**
+- caja con apertura, ingresos y retiros, y cierre con arqueo;
+- alerta de stock mínimo;
+- kardex;
+- órdenes de compra con recepción parcial;
+- precios por proveedor;
+- flujo de encargos completo.
+
+**Brechas principales:**
+- búsqueda rápida y código de barras en caja;
+- ticket;
+- listas de precios (minorista, mayorista, contratista);
+- devoluciones de mostrador;
+- ajuste de inventario;
+- compra sugerida por stock mín/máx;
+- unidad de compra distinta de la de venta (caja → unidad);
+- presupuesto al cliente;
+- cuenta corriente;
+- reportes (más vendidos, margen, sin movimiento);
+- login y roles;
+- IVA y factura electrónica.
+
+Además: no hay tests automáticos, y `OrdenCompra` no guarda `proveedor_id`.
+
+**Plan por fases** (una funcionalidad a la vez, cada una en su rama, con migración nueva y tests):
+
+| Fase | Contenido |
+|---|---|
+| 0. Base | Tests con pytest y corrección del stock negativo |
+| 1. Vender más rápido | Caja rápida (código de barras, buscador, total y vuelto, ticket) · ajuste de inventario · devoluciones · listas de precios |
+| 2. Stock y compras | OC con `proveedor_id` y costo al recibir · unidades de compra y venta · compra sugerida |
+| 3. Clientes | Presupuesto a cliente → venta · cuenta corriente |
+| 4. Gestión | Reportes · usuarios y roles · IVA y factura electrónica (preparada) |
+
+**Estado:** propuesta. Faltan definiciones de negocio antes de implementar: el país (por la
+moneda y el RUC, probablemente Paraguay), las listas de precios, la política de crédito, los
+equipos (lector e impresora) y si hay varias cajas atendiendo a la vez. Ver la sección 7 del
+documento.
