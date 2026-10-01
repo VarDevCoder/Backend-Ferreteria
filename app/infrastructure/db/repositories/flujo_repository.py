@@ -154,8 +154,12 @@ class SqlAlchemyPedidoClienteRepository:
             self._session.flush()
 
     def siguiente_numero(self) -> str:
-        ultimo_id = self._session.execute(select(func.max(PedidoClienteModel.id))).scalar() or 0
-        return f"Solicitud #{ultimo_id + 1}"
+        anio = int(self._session.execute(select(func.extract("year", func.current_date()))).scalar_one())
+        stmt = select(func.count()).select_from(PedidoClienteModel).where(
+            func.extract("year", PedidoClienteModel.created_at) == anio
+        )
+        cantidad = self._session.execute(stmt).scalar_one()
+        return f"PED-{anio}-{cantidad + 1:04d}"
 
     def contar_activos(self) -> int:
         stmt = select(func.count()).select_from(PedidoClienteModel).where(

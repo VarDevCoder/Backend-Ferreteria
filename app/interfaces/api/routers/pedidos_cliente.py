@@ -4,7 +4,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends
 
 from app.application.services.catalogo_service import ProductoService
-from app.application.services.contactos_service import ProveedorProductoService
+from app.application.services.contactos_service import ProveedorProductoService, ProveedorService
 from app.application.services.pedido_cliente_service import PedidoClienteService
 from app.application.services.solicitud_presupuesto_service import SolicitudPresupuestoService
 from app.interfaces.api.deps import (
@@ -12,6 +12,7 @@ from app.interfaces.api.deps import (
     get_pedido_cliente_service,
     get_producto_service,
     get_proveedor_producto_service,
+    get_proveedor_service,
     get_solicitud_service,
 )
 from app.interfaces.api.schemas.common import Mensaje, MotivoRequerido
@@ -31,6 +32,7 @@ PedidoSvc = Annotated[PedidoClienteService, Depends(get_pedido_cliente_service)]
 SolicitudSvc = Annotated[SolicitudPresupuestoService, Depends(get_solicitud_service)]
 CatalogoSvc = Annotated[ProveedorProductoService, Depends(get_proveedor_producto_service)]
 ProductoSvc = Annotated[ProductoService, Depends(get_producto_service)]
+ProveedorSvc = Annotated[ProveedorService, Depends(get_proveedor_service)]
 
 
 @router.get("", response_model=list[PedidoClienteResponse])
@@ -82,11 +84,13 @@ def solicitar_cotizacion_a_todos(pedido_id: int, servicio: PedidoSvc, usuario: R
     return Mensaje(mensaje=f"Se enviaron {creadas} solicitudes de cotización a proveedores")
 
 
-@router.get("/{pedido_id}/comparacion", response_model=ComparacionPedidoResponse, summary="CU-13 ★: comparar ofertas de proveedores para este pedido")
+@router.get("/{pedido_id}/comparacion", response_model=ComparacionPedidoResponse, summary="Comparar ofertas de proveedores para este pedido")
 def comparar_ofertas(
-    pedido_id: int, pedidos: PedidoSvc, solicitudes: SolicitudSvc, catalogo: CatalogoSvc, productos: ProductoSvc
+    pedido_id: int, pedidos: PedidoSvc, solicitudes: SolicitudSvc, catalogo: CatalogoSvc, productos: ProductoSvc,
+    proveedores: ProveedorSvc,
 ) -> ComparacionPedidoResponse:
     pedido = pedidos.obtener(pedido_id)
+    nombre_proveedor = {p.id: p.razon_social for p in proveedores.listar()}
     cotizaciones = solicitudes.listar(pedido_cliente_id=pedido_id)
 
     comparacion: list[ComparacionProducto] = []
@@ -100,7 +104,7 @@ def comparar_ofertas(
                 cantidad_requerida=float(item.cantidad),
                 ofertas_catalogo=[
                     OfertaCatalogoProveedor(
-                        proveedor_id=o.proveedor_id, proveedor_nombre=o.nombre_proveedor or f"Proveedor #{o.proveedor_id}",
+                        proveedor_id=o.proveedor_id, proveedor_nombre=nombre_proveedor.get(o.proveedor_id, f"Proveedor #{o.proveedor_id}"),
                         precio=o.precio, disponible=o.disponible, tiempo_entrega_dias=o.tiempo_entrega_dias,
                     )
                     for o in ofertas_catalogo

@@ -44,7 +44,7 @@ def eliminar_solicitud(solicitud_id: int, servicio: SolicitudSvc, _usuario: Requ
     return Mensaje(mensaje="Solicitud eliminada exitosamente")
 
 
-@router.post("/{solicitud_id}/aceptar", response_model=OrdenCompraResponse, summary="CU-13 ★: acepta la cotización y emite la Orden de Compra")
+@router.post("/{solicitud_id}/aceptar", response_model=OrdenCompraResponse, summary="Acepta la cotización y emite la Orden de Compra")
 def aceptar_cotizacion(solicitud_id: int, servicio: SolicitudSvc, usuario: RequireAnkorUser) -> OrdenCompraResponse:
     orden = servicio.aceptar(solicitud_id, usuario.id)
     return OrdenCompraResponse.desde_entidad(orden)
@@ -57,12 +57,12 @@ def rechazar_cotizacion(solicitud_id: int, servicio: SolicitudSvc, _usuario: Req
 
 # --- Portal proveedor (CU-12): sin sesión — el proveedor se identifica por proveedor_id ---------
 
-@router.post("/{solicitud_id}/ver", response_model=SolicitudPresupuestoResponse, summary="CU-12: el proveedor abre la solicitud (marca VISTA)")
+@router.post("/{solicitud_id}/ver", response_model=SolicitudPresupuestoResponse, summary="Marca la solicitud como vista por el proveedor")
 def ver_solicitud_como_proveedor(solicitud_id: int, datos: VerSolicitudInput, servicio: SolicitudSvc) -> SolicitudPresupuestoResponse:
     return SolicitudPresupuestoResponse.desde_entidad(servicio.ver_como_proveedor(solicitud_id, datos.proveedor_id))
 
 
-@router.post("/{solicitud_id}/cotizar", response_model=SolicitudPresupuestoResponse, summary="CU-12: el proveedor envía su cotización")
+@router.post("/{solicitud_id}/cotizar", response_model=SolicitudPresupuestoResponse, summary="Registra la cotización del proveedor (precios y disponibilidad)")
 def cotizar_solicitud(solicitud_id: int, datos: CotizacionInput, servicio: SolicitudSvc) -> SolicitudPresupuestoResponse:
     solicitud = servicio.enviar_cotizacion(
         solicitud_id, datos.proveedor_id, datos.dias_entrega_estimados,
@@ -71,7 +71,7 @@ def cotizar_solicitud(solicitud_id: int, datos: CotizacionInput, servicio: Solic
     return SolicitudPresupuestoResponse.desde_entidad(solicitud)
 
 
-@router.post("/{solicitud_id}/sin-stock", response_model=SolicitudPresupuestoResponse, summary="CU-12: el proveedor marca que no tiene stock")
+@router.post("/{solicitud_id}/sin-stock", response_model=SolicitudPresupuestoResponse, summary="Registra que el proveedor no tiene stock")
 def marcar_solicitud_sin_stock(solicitud_id: int, datos: SinStockInput, servicio: SolicitudSvc) -> SolicitudPresupuestoResponse:
     return SolicitudPresupuestoResponse.desde_entidad(
         servicio.marcar_sin_stock(solicitud_id, datos.proveedor_id, datos.respuesta_proveedor)

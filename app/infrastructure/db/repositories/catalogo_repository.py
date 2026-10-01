@@ -76,6 +76,28 @@ class SqlAlchemyProductoRepository:
         rows = self._session.execute(stmt).scalars().all()
         return [self._to_entity(r) for r in rows]
 
+    def buscar(self, texto: str, limite: int = 20) -> list[Producto]:
+        """Búsqueda para la caja (solo activos). Un código exacto —lo que manda
+        un lector de código de barras— devuelve solo ese producto; si no, cada
+        palabra tiene que aparecer en el nombre o el código, en cualquier
+        orden ("tornillo 1" encuentra "Tornillos autorroscantes 1\"")."""
+        texto = texto.strip()
+        if not texto:
+            return []
+        activos = select(ProductoModel).where(ProductoModel.activo.is_(True))
+        exacto = self._session.execute(
+            activos.where(func.lower(ProductoModel.codigo) == texto.lower())
+        ).scalar_one_or_none()
+        if exacto is not None:
+            return [self._to_entity(exacto)]
+
+        stmt = activos
+        for palabra in texto.split():
+            patron = "%" + palabra.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+            stmt = stmt.where(ProductoModel.nombre.ilike(patron, escape="\\") | ProductoModel.codigo.ilike(patron, escape="\\"))
+        rows = self._session.execute(stmt.order_by(ProductoModel.nombre).limit(limite)).scalars().all()
+        return [self._to_entity(r) for r in rows]
+
     def get_by_id(self, producto_id: int) -> Producto | None:
         row = self._session.get(ProductoModel, producto_id)
         return self._to_entity(row) if row else None

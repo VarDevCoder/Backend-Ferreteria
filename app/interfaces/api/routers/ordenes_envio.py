@@ -40,7 +40,7 @@ def marcar_lista_despacho(orden_id: int, servicio: OrdenSvc, _usuario: RequireAn
     return OrdenEnvioResponse.desde_entidad(servicio.marcar_lista_despacho(orden_id))
 
 
-@router.post("/{orden_id}/despachar", response_model=OrdenEnvioResponse, summary="CU-18: despachar (descuenta stock, valida disponibilidad)")
+@router.post("/{orden_id}/despachar", response_model=OrdenEnvioResponse, summary="Despachar (descuenta stock, valida disponibilidad)")
 def despachar_orden(orden_id: int, datos: DespacharInput, servicio: OrdenSvc, usuario: RequireAnkorUser) -> OrdenEnvioResponse:
     return OrdenEnvioResponse.desde_entidad(servicio.despachar(orden_id, datos.numero_guia, usuario.id))
 

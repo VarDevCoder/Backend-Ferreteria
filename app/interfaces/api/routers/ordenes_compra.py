@@ -56,7 +56,7 @@ def marcar_en_transito(orden_id: int, servicio: OrdenSvc, _usuario: RequireAnkor
     return OrdenCompraResponse.desde_entidad(servicio.marcar_en_transito(orden_id))
 
 
-@router.post("/{orden_id}/recibir", response_model=OrdenCompraResponse, summary="CU-15: registrar recepción de mercadería (mueve stock)")
+@router.post("/{orden_id}/recibir", response_model=OrdenCompraResponse, summary="Registrar recepción de mercadería (mueve stock)")
 def recibir_mercaderia(orden_id: int, datos: RecepcionMercaderiaInput, servicio: OrdenSvc, usuario: RequireAnkorUser) -> OrdenCompraResponse:
     cantidades = {int(item_id): cantidad for item_id, cantidad in datos.cantidades.items()}
     orden = servicio.recibir_mercaderia(orden_id, usuario.id, cantidades)

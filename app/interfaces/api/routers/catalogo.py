@@ -1,7 +1,7 @@
 """Endpoints de Categorías y Productos (CU-05, CU-06)."""
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
 from app.application.services.catalogo_service import CategoriaService, ProductoService
 from app.interfaces.api.deps import RequireAnkorUser, get_categoria_service, get_producto_service
@@ -49,6 +49,14 @@ def listar_productos(
     servicio: ProductoSvc, solo_activos: bool = False, categoria_id: int | None = None, buscar: str | None = None
 ) -> list[ProductoResponse]:
     return [ProductoResponse.desde_entidad(p) for p in servicio.listar(solo_activos, categoria_id, buscar)]
+
+
+@router.get(
+    "/productos/buscar", response_model=list[ProductoResponse],
+    summary="Búsqueda rápida para la caja: código exacto (lector de código de barras) o palabras del nombre",
+)
+def buscar_productos(servicio: ProductoSvc, q: str, limite: Annotated[int, Query(ge=1, le=50)] = 20) -> list[ProductoResponse]:
+    return [ProductoResponse.desde_entidad(p) for p in servicio.buscar(q, limite)]
 
 
 @router.get("/productos/{producto_id}", response_model=ProductoResponse)

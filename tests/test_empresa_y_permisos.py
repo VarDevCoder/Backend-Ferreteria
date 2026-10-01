@@ -171,3 +171,27 @@ def test_vendedor_no_puede_cambiar_el_precio(client):
 
     me = client.get(f"{API}/auth/me", headers=_auth(vendedor)).json()
     assert "precios_venta" not in me["permisos"]
+
+
+def test_busqueda_rapida_por_codigo_y_palabras(client):
+    admin = _configurar(client)
+    for codigo, nombre in [("7790001", 'Tornillos autorroscantes 1" caja 100'), (None, 'Tornillo madera 2"'), (None, "Martillo 16oz")]:
+        client.post(f"{API}/productos", headers=_auth(admin), json={"codigo": codigo, "nombre": nombre, "precio_compra": 100})
+
+    def buscar(q):
+        return [p["nombre"] for p in client.get(f"{API}/productos/buscar", params={"q": q}, headers=_auth(admin)).json()]
+
+    assert buscar("7790001") == ['Tornillos autorroscantes 1" caja 100']   # lector de código de barras
+    assert buscar("tornillo 1") == ['Tornillos autorroscantes 1" caja 100']  # palabras en cualquier orden
+    assert len(buscar("TORNILLO")) == 2
+    assert buscar("100%") == []                                              # comodines escapados
+
+
+def test_pedidos_numerados_ped(client):
+    admin = _configurar(client)
+    p = client.post(f"{API}/productos", headers=_auth(admin), json={"nombre": "X", "precio_compra": 1, "precio_venta": 2}).json()
+    pedido = client.post(f"{API}/pedidos-cliente", headers=_auth(admin), json={
+        "cliente_nombre": "Juan", "items": [{"producto_id": p["id"], "cantidad": 1, "precio_unitario": 2}],
+    })
+    assert pedido.status_code == 201, pedido.text
+    assert pedido.json()["numero"].startswith(f"PED-{date.today().year}-")

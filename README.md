@@ -92,7 +92,7 @@ Todos bajo el prefijo `/api/v1` (salvo el chequeo de salud `GET /`).
 | Reportes | `GET /reportes/ventas?desde=&hasta=` — totales, medios de pago, ventas por día, productos más vendidos con utilidad estimada |
 | Caja | `/caja/turno-abierto`, `/caja/turnos` — `abrir`, `movimientos`, `cerrar`; `/caja/ventas` |
 | Dashboard | `GET /dashboard` |
-| Catálogo | `/categorias`, `/productos` |
+| Catálogo | `/categorias`, `/productos`, `GET /productos/buscar?q=` (caja rápida: código exacto o palabras del nombre) |
 | Contactos | `/clientes`, `/clientes/ciudades`, `/proveedores`, `/proveedor-productos` |
 | Pedidos de cliente | `/pedidos-cliente` — `procesar`, `solicitar-todos`, `comparacion`, `mercaderia-recibida`, `cancelar` |
 | Solicitudes de presupuesto | `/solicitudes-presupuesto` — `ver`, `cotizar`, `sin-stock`, `aceptar`, `rechazar` |
@@ -257,7 +257,10 @@ Además: no hay tests automáticos, y `OrdenCompra` no guarda `proveedor_id`.
 **Avance:** ya están hechos login y roles, ajuste de inventario, ticket imprimible, tests de
 integración, la corrección de los dos bugs y una primera versión de reportes (más vendidos, utilidad
 estimada, ventas por día y por medio de pago). El código de barras se guarda en el código del
-producto, pero la caja todavía no tiene buscador ni escaneo.
+producto y la **caja rápida** ya está hecha: buscador en vivo por código o palabras, lista para
+lector de código de barras (código + Enter agrega el producto), total, vuelto y atajos F2/F9.
+Los pedidos se numeran `PED-AAAA-NNNN` (antes "Solicitud #N") y la comparación de ofertas muestra
+el nombre real del proveedor.
 
 **Respuestas del negocio (oct. 2026):** Paraguay; se cobra en guaraníes y dólares; tiene que haber
 venta a crédito (cuenta corriente); listas de precios según el tamaño de cada ferretería

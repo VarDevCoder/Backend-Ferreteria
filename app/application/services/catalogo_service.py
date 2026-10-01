@@ -56,6 +56,9 @@ class ProductoService:
             raise RecursoNoEncontrado("Producto", producto_id)
         return producto
 
+    def buscar(self, texto: str, limite: int = 20) -> list[Producto]:
+        return self._productos.buscar(texto, limite)
+
     def crear(
         self,
         nombre: str,
