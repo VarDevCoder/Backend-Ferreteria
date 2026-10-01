@@ -22,13 +22,11 @@ def client():
         pytest.skip("Definí TEST_DATABASE_URL para correr los tests de integración")
     from fastapi.testclient import TestClient
 
-    from app.application.services.usuario_service import limite_de_intentos
     from app.infrastructure.db.models import Base
     from app.infrastructure.db.session import engine
     from app.main import app
 
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
-    limite_de_intentos._fallos.clear()
     with TestClient(app) as c:
         yield c

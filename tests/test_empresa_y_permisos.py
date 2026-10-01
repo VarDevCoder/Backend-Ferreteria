@@ -129,3 +129,45 @@ def test_stock_inicial_venta_y_reporte(client):
     assert rep["mostrador"] == {"cantidad_ventas": 1, "total": 12000, "ticket_promedio": 12000}
     top = rep["productos_mas_vendidos"][0]
     assert (top["cantidad"], top["total"], top["utilidad_estimada"]) == (4, 12000, 4000)
+
+
+def _producto_con_stock(client, token, stock, precio_venta=3000) -> dict:
+    p = client.post(f"{API}/productos", headers=_auth(token), json={"nombre": "Cinta", "precio_compra": 2000, "precio_venta": precio_venta}).json()
+    client.post(f"{API}/inventario/ajustes", headers=_auth(token), json={"producto_id": p["id"], "stock_nuevo": stock, "motivo": "Inicial"})
+    return p
+
+
+def test_mismo_producto_en_varias_lineas_no_deja_stock_negativo(client):
+    admin = _configurar(client)
+    p = _producto_con_stock(client, admin, stock=5)
+    client.post(f"{API}/caja/turnos/abrir", headers=_auth(admin), json={"fondo_inicial": 0})
+
+    lineas = [{"producto_id": p["id"], "cantidad": 3}, {"producto_id": p["id"], "cantidad": 3}]
+    r = client.post(f"{API}/caja/ventas", headers=_auth(admin), json={"items": lineas, "metodo_pago": "EFECTIVO"})
+    assert r.status_code == 409, r.text
+    assert client.get(f"{API}/productos/{p['id']}", headers=_auth(admin)).json()["stock_actual"] == 5
+
+    lineas[1]["cantidad"] = 2  # 3 + 2 = 5: justo el stock
+    assert client.post(f"{API}/caja/ventas", headers=_auth(admin), json={"items": lineas, "metodo_pago": "EFECTIVO"}).status_code == 201
+    assert client.get(f"{API}/productos/{p['id']}", headers=_auth(admin)).json()["stock_actual"] == 0
+
+
+def test_vendedor_no_puede_cambiar_el_precio(client):
+    admin = _configurar(client)
+    vendedor = _crear_usuario(client, admin, "vende@sj.com", "vendedor")
+    p = _producto_con_stock(client, admin, stock=10, precio_venta=3000)
+    client.post(f"{API}/caja/turnos/abrir", headers=_auth(admin), json={"fondo_inicial": 0})
+
+    def vender(token, precio):
+        item = {"producto_id": p["id"], "cantidad": 1}
+        if precio is not None:
+            item["precio_unitario"] = precio
+        return client.post(f"{API}/caja/ventas", headers=_auth(token), json={"items": [item], "metodo_pago": "EFECTIVO"})
+
+    assert vender(vendedor, 1).status_code == 403          # precio inventado: rechazado
+    assert vender(vendedor, 3000).json()["total"] == 3000  # precio de lista: ok
+    assert vender(vendedor, None).json()["total"] == 3000  # sin precio: usa el de lista
+    assert vender(admin, 2500).json()["total"] == 2500     # el encargado/admin sí puede
+
+    me = client.get(f"{API}/auth/me", headers=_auth(vendedor)).json()
+    assert "precios_venta" not in me["permisos"]

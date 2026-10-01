@@ -10,7 +10,13 @@ from decimal import Decimal
 
 from app.domain.entities import CajaTurno, MovimientoCaja, MovimientoInventario, VentaMostrador, VentaMostradorItem
 from app.domain.enums import MetodoPago, TipoMovimientoCaja, TipoMovimientoInventario, TipoReferenciaMovimiento
-from app.domain.exceptions import RecursoNoEncontrado, SolicitudInvalida, StockInsuficiente, TransicionDeEstadoInvalida
+from app.domain.exceptions import (
+    PermisoDenegado,
+    RecursoNoEncontrado,
+    SolicitudInvalida,
+    StockInsuficiente,
+    TransicionDeEstadoInvalida,
+)
 from app.domain.repositories import (
     CajaTurnoRepository,
     MovimientoInventarioRepository,
@@ -93,7 +99,11 @@ class CajaService:
         cliente_id: int | None = None,
         descuento: int = 0,
         notas: str | None = None,
+        puede_cambiar_precios: bool = False,
     ) -> VentaMostrador:
+        """Registra una venta de contado. `puede_cambiar_precios`: si es False,
+        el precio de cada línea tiene que ser el de lista del producto (el
+        quién vendió queda en `usuario_id`)."""
         turno = self._turnos.get_abierto()
         if turno is None:
             raise TransicionDeEstadoInvalida("No hay un turno de caja abierto. Abrí caja antes de vender.")
@@ -101,6 +111,9 @@ class CajaService:
             raise SolicitudInvalida("La venta debe tener al menos un ítem")
 
         venta_items = []
+        # Cantidad total pedida por producto: si un producto aparece en
+        # varias líneas, el stock se valida contra la suma, no línea por línea.
+        pedido_por_producto: dict[int, Decimal] = {}
         for i in items:
             producto = self._productos.get_by_id(i["producto_id"])
             if producto is None:
@@ -108,12 +121,24 @@ class CajaService:
             cantidad = Decimal(str(i["cantidad"]))
             if cantidad <= 0:
                 raise SolicitudInvalida(f"La cantidad de {producto.nombre} debe ser mayor a cero")
-            if producto.stock_actual < cantidad:
-                raise StockInsuficiente(producto.nombre, producto.stock_actual, cantidad)
+            total_pedido = pedido_por_producto.get(producto.id, Decimal("0")) + cantidad
+            if producto.stock_actual < total_pedido:
+                raise StockInsuficiente(producto.nombre, producto.stock_actual, total_pedido)
+            pedido_por_producto[producto.id] = total_pedido
+
+            precio = i.get("precio_unitario")
+            if precio is None:
+                precio = producto.precio_venta
+            elif precio != producto.precio_venta and not puede_cambiar_precios:
+                raise PermisoDenegado(
+                    f"Tu rol no puede cambiar el precio de {producto.nombre} "
+                    f"(precio de lista: {producto.precio_venta}). Pedíselo a un encargado o usá el descuento"
+                )
+            if precio < 0:
+                raise SolicitudInvalida("El precio no puede ser negativo")
             venta_items.append(
                 VentaMostradorItem(
-                    id=None, venta_id=None, producto_id=producto.id, cantidad=cantidad,
-                    precio_unitario=i.get("precio_unitario") or producto.precio_venta,
+                    id=None, venta_id=None, producto_id=producto.id, cantidad=cantidad, precio_unitario=precio,
                 )
             )
 

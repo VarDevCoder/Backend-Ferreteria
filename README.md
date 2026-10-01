@@ -200,11 +200,10 @@ curl https://ankor-backend.vercel.app/api/v1/empresa   # datos públicos de la e
 - **`TypeError: 'function' object is not subscriptable` al arrancar** — un repositorio define un
   método `list()` y usa `list[...]` en anotaciones. En Python 3.14 funciona por la evaluación diferida
   de anotaciones, pero en 3.12 no. Los módulos con un método `list` llevan `from __future__ import annotations`.
-- **Stock negativo en venta de mostrador** — `CajaService.registrar_venta` valida el stock línea por
-  línea. Si el mismo producto va en dos líneas, cada una pasa el control y el stock puede quedar negativo.
-  *Pendiente de corregir* (Fase 0 del plan).
-- **Precio de venta sin control** — `POST /caja/ventas` acepta el `precio_unitario` que manda el
-  frontend sin validarlo. *Pendiente* (se resuelve con las listas de precios, Fase 1).
+- **Stock negativo en venta de mostrador** — *corregido*: si un producto aparece en varias líneas de
+  una venta, el stock se valida contra la suma de las cantidades.
+- **Precio de venta sin control** — *corregido*: solo admin y encargado pueden vender a un precio
+  distinto del de lista; el resto recibe 403. El descuento % de la venta sigue sin tope por rol.
 
 ## Análisis y hoja de ruta
 
@@ -255,7 +254,17 @@ Además: no hay tests automáticos, y `OrdenCompra` no guarda `proveedor_id`.
 | 3. Clientes | Presupuesto a cliente → venta · cuenta corriente |
 | 4. Gestión | Reportes · usuarios y roles · IVA y factura electrónica (preparada) |
 
-**Estado:** propuesta. Faltan definiciones de negocio antes de implementar: el país (por la
+**Avance:** ya están hechos login y roles, ajuste de inventario, ticket imprimible, tests de
+integración, la corrección de los dos bugs y una primera versión de reportes (más vendidos, utilidad
+estimada, ventas por día y por medio de pago). El código de barras se guarda en el código del
+producto, pero la caja todavía no tiene buscador ni escaneo.
+
+**Respuestas del negocio (oct. 2026):** Paraguay; se cobra en guaraníes y dólares; tiene que haber
+venta a crédito (cuenta corriente); listas de precios según el tamaño de cada ferretería
+(configurables); lector de código de barras a futuro; puede haber varias cajas a la vez. El objetivo
+es comercializar el sistema por suscripción mensual a distintas ferreterías.
+
+**Estado original del análisis:** propuesta. Faltaban definiciones de negocio antes de implementar: el país (por la
 moneda y el RUC, probablemente Paraguay), las listas de precios, la política de crédito, los
 equipos (lector e impresora) y si hay varias cajas atendiendo a la vez. Ver la sección 7 del
 documento.

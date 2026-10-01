@@ -3,6 +3,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends
 
+from app.application.permisos import puede_cambiar_precio_de_venta
 from app.application.services.caja_service import CajaService
 from app.interfaces.api.deps import RequireAnkorUser, get_caja_service
 from app.interfaces.api.schemas.caja import (
@@ -72,6 +73,7 @@ def registrar_venta(datos: VentaMostradorCreate, servicio: CajaSvc, usuario: Req
         cliente_id=datos.cliente_id,
         descuento=datos.descuento,
         notas=datos.notas,
+        puede_cambiar_precios=puede_cambiar_precio_de_venta(usuario.rol),
     )
     return VentaMostradorResponse.desde_entidad(venta)
 

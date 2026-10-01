@@ -1,8 +1,5 @@
 """Casos de uso de cuentas del personal: ingreso, cambio de contraseña y
 administración de usuarios (solo admin)."""
-import threading
-import time
-
 from app.domain.entities import Usuario
 from app.domain.enums import RolUsuario
 from app.domain.exceptions import (
@@ -13,43 +10,31 @@ from app.domain.exceptions import (
     SolicitudInvalida,
     UsuarioInactivo,
 )
-from app.domain.repositories import UsuarioRepository
+from app.domain.repositories import IntentoLoginRepository, UsuarioRepository
 from app.infrastructure.security.password_hasher import hash_password, verify_password
 
 LARGO_MINIMO_PASSWORD = 8
 
 
-class _LimiteDeIntentos:
-    """Frena la fuerza bruta: tras N intentos fallidos para un mismo email,
-    bloquea ese email durante unos minutos. Vive en memoria del proceso (se
-    reinicia con el servidor), suficiente para una instancia única."""
+class LimiteDeIntentos:
+    """Frena la fuerza bruta: tras N contraseñas incorrectas para un mismo
+    email dentro de la ventana, bloquea ese email hasta que pase el tiempo."""
 
     MAX_INTENTOS = 5
     VENTANA_SEGUNDOS = 5 * 60
 
-    def __init__(self):
-        self._fallos: dict[str, list[float]] = {}
-        self._lock = threading.Lock()
+    def __init__(self, intentos: IntentoLoginRepository):
+        self._intentos = intentos
 
-    def _recientes(self, clave: str, ahora: float) -> list[float]:
-        return [t for t in self._fallos.get(clave, []) if ahora - t < self.VENTANA_SEGUNDOS]
+    def verificar(self, email: str) -> None:
+        if self._intentos.contar_recientes(email, self.VENTANA_SEGUNDOS) >= self.MAX_INTENTOS:
+            raise PermisoDenegado("Demasiados intentos fallidos. Esperá unos minutos y volvé a probar")
 
-    def verificar(self, clave: str) -> None:
-        with self._lock:
-            if len(self._recientes(clave, time.monotonic())) >= self.MAX_INTENTOS:
-                raise PermisoDenegado("Demasiados intentos fallidos. Esperá unos minutos y volvé a probar")
+    def registrar_fallo(self, email: str) -> None:
+        self._intentos.registrar_fallo(email)
 
-    def registrar_fallo(self, clave: str) -> None:
-        with self._lock:
-            ahora = time.monotonic()
-            self._fallos[clave] = self._recientes(clave, ahora) + [ahora]
-
-    def limpiar(self, clave: str) -> None:
-        with self._lock:
-            self._fallos.pop(clave, None)
-
-
-limite_de_intentos = _LimiteDeIntentos()
+    def limpiar(self, email: str) -> None:
+        self._intentos.limpiar(email, self.VENTANA_SEGUNDOS)
 
 
 def normalizar_email(email: str) -> str:
@@ -62,17 +47,21 @@ def validar_password(password: str) -> None:
 
 
 class UsuarioService:
-    def __init__(self, usuarios: UsuarioRepository):
+    def __init__(self, usuarios: UsuarioRepository, intentos: IntentoLoginRepository | None = None):
         self._usuarios = usuarios
+        # Solo el login lo necesita; el resto de los casos de uso no.
+        self._limite = LimiteDeIntentos(intentos) if intentos is not None else None
 
     # --- Sesión --------------------------------------------------------------
 
     def autenticar(self, email: str, password: str) -> Usuario:
         email = normalizar_email(email)
-        limite_de_intentos.verificar(email)
+        if self._limite is None:
+            raise RuntimeError("UsuarioService.autenticar requiere el repositorio de intentos de login")
+        self._limite.verificar(email)
         usuario = self._usuarios.get_by_email(email)
         if usuario is None or not verify_password(password, usuario.password_hash):
-            limite_de_intentos.registrar_fallo(email)
+            self._limite.registrar_fallo(email)
             raise CredencialesInvalidas()
         if not usuario.es_interno():
             # Los proveedores tienen cuenta (para un futuro portal) pero no
@@ -80,7 +69,7 @@ class UsuarioService:
             raise PermisoDenegado("Esta cuenta no tiene acceso al sistema de gestión")
         if not usuario.activo:
             raise UsuarioInactivo()
-        limite_de_intentos.limpiar(email)
+        self._limite.limpiar(email)
         return usuario
 
     def cambiar_password(self, usuario: Usuario, actual: str, nueva: str) -> None:

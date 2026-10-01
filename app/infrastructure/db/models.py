@@ -40,6 +40,18 @@ class UsuarioModel(Base):
     proveedor: Mapped["ProveedorModel | None"] = relationship(back_populates="user", uselist=False)
 
 
+class IntentoLoginFallidoModel(Base):
+    """Contraseñas incorrectas recientes por email, para frenar la fuerza
+    bruta. Vive en la base (y no en memoria) porque en Vercel cada request
+    puede caer en una instancia distinta."""
+
+    __tablename__ = "intentos_login_fallidos"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    email: Mapped[str] = mapped_column(String(255), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
+
+
 class EmpresaModel(Base):
     """Configuración de la ferretería. Siempre una única fila con id=1."""
 

@@ -54,6 +54,15 @@ PUEDE_MODIFICAR: dict[Modulo, frozenset[RolUsuario]] = {
 SOLO_CON_PERMISO_PARA_LEER = frozenset({Modulo.REPORTES, Modulo.USUARIOS})
 
 
+# Quién puede vender a un precio distinto del de lista (el resto vende al
+# precio del catálogo y, como mucho, aplica el descuento de la venta).
+PUEDEN_CAMBIAR_PRECIO_DE_VENTA = frozenset({A, E})
+
+
+def puede_cambiar_precio_de_venta(rol: RolUsuario) -> bool:
+    return rol in PUEDEN_CAMBIAR_PRECIO_DE_VENTA
+
+
 def puede_modificar(rol: RolUsuario, modulo: Modulo) -> bool:
     return rol in PUEDE_MODIFICAR[modulo]
 
@@ -65,4 +74,9 @@ def puede_leer(rol: RolUsuario, modulo: Modulo) -> bool:
 
 
 def modulos_modificables(rol: RolUsuario) -> list[str]:
-    return [m.value for m in Modulo if puede_modificar(rol, m)]
+    """Permisos que se informan al frontend: módulos modificables más
+    permisos puntuales (ej. `precios_venta`)."""
+    permisos = [m.value for m in Modulo if puede_modificar(rol, m)]
+    if puede_cambiar_precio_de_venta(rol):
+        permisos.append("precios_venta")
+    return permisos

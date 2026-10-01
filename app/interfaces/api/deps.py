@@ -47,6 +47,7 @@ from app.infrastructure.db.repositories.flujo_repository import (
     SqlAlchemyVentaMostradorRepository,
 )
 from app.infrastructure.db.repositories.empresa_repository import SqlAlchemyEmpresaRepository
+from app.infrastructure.db.repositories.intento_login_repository import SqlAlchemyIntentoLoginRepository
 from app.infrastructure.db.repositories.reporte_repository import SqlAlchemyReporteRepository
 from app.infrastructure.db.repositories.usuario_repository import SqlAlchemyUsuarioRepository
 from app.infrastructure.db.session import get_db
@@ -206,7 +207,7 @@ def get_dashboard_service(
 
 
 def get_usuario_service(usuarios: Annotated[SqlAlchemyUsuarioRepository, Depends(get_usuario_repo)]) -> UsuarioService:
-    return UsuarioService(usuarios)
+    return UsuarioService(usuarios, SqlAlchemyIntentoLoginRepository())
 
 
 def get_empresa_service(
