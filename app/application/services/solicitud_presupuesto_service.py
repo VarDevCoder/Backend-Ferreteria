@@ -193,7 +193,9 @@ class SolicitudPresupuestoService:
 
         if solicitud.pedido_cliente_id is not None:
             pedido = self._pedidos.get_by_id(solicitud.pedido_cliente_id)
-            if pedido is not None:
+            # Si el pedido ya salió desde stock (o está más avanzado), la
+            # compra queda como reposición y el pedido no retrocede.
+            if pedido is not None and pedido.puede_generar_orden_compra():
                 pedido.estado = EstadoPedidoCliente.ORDEN_COMPRA
                 self._pedidos.update(pedido)
 

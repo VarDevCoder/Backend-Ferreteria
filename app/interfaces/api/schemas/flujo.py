@@ -343,3 +343,11 @@ class ComparacionPedidoResponse(BaseModel):
     pedido: PedidoClienteResponse
     cotizaciones: list[SolicitudPresupuestoResponse]
     comparacion_catalogo: list[ComparacionProducto]
+
+
+class DisponibilidadItem(BaseModel):
+    producto_id: int
+    producto_nombre: str
+    requerida: float
+    stock: float
+    faltante: float

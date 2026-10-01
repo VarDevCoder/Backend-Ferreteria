@@ -203,7 +203,21 @@ class PedidoCliente:
         )
 
     def puede_generar_orden_envio(self) -> bool:
-        return self.estado == EstadoPedidoCliente.MERCADERIA_RECIBIDA
+        """Con la mercadería recibida del proveedor, o antes de comprar si
+        alcanza el stock del depósito (el servicio valida el stock)."""
+        return self.estado in (
+            EstadoPedidoCliente.RECIBIDO,
+            EstadoPedidoCliente.EN_PROCESO,
+            EstadoPedidoCliente.PRESUPUESTADO,
+            EstadoPedidoCliente.MERCADERIA_RECIBIDA,
+        )
+
+    def cantidades_por_producto(self) -> dict[int, Decimal]:
+        """Cantidad total pedida por producto (un producto puede repetirse en varias líneas)."""
+        total: dict[int, Decimal] = {}
+        for item in self.items:
+            total[item.producto_id] = total.get(item.producto_id, Decimal("0")) + Decimal(item.cantidad)
+        return total
 
     def puede_solicitar_cotizacion(self) -> bool:
         return self.estado in (

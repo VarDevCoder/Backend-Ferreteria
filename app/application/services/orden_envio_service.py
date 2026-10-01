@@ -8,7 +8,12 @@ from decimal import Decimal
 
 from app.domain.entities import MovimientoInventario, OrdenEnvio, OrdenEnvioItem
 from app.domain.enums import EstadoOrdenEnvio, EstadoPedidoCliente, TipoMovimientoInventario, TipoReferenciaMovimiento
-from app.domain.exceptions import RecursoNoEncontrado, StockInsuficiente, TransicionDeEstadoInvalida
+from app.domain.exceptions import (
+    RecursoNoEncontrado,
+    StockInsuficiente,
+    StockInsuficienteParaPedido,
+    TransicionDeEstadoInvalida,
+)
 from app.domain.repositories import (
     MovimientoInventarioRepository,
     OrdenEnvioRepository,
@@ -56,6 +61,8 @@ class OrdenEnvioService:
             raise RecursoNoEncontrado("PedidoCliente", pedido_cliente_id)
         if not pedido.puede_generar_orden_envio():
             raise TransicionDeEstadoInvalida("Este pedido no puede generar orden de envío")
+        if pedido.estado != EstadoPedidoCliente.MERCADERIA_RECIBIDA:
+            self._validar_stock_para(pedido)
 
         orden = OrdenEnvio(
             id=None,
@@ -186,6 +193,19 @@ class OrdenEnvioService:
         orden = self._ordenes.update(orden)
         self._revertir_pedido_a_mercaderia_recibida(orden)
         return orden
+
+    def _validar_stock_para(self, pedido) -> None:
+        """Envío directo desde el depósito (sin pasar por compras): tiene que
+        alcanzar el stock de todos los productos del pedido."""
+        faltantes = []
+        for producto_id, requerida in pedido.cantidades_por_producto().items():
+            producto = self._productos.get_by_id(producto_id)
+            if producto is None:
+                raise RecursoNoEncontrado("Producto", producto_id)
+            if producto.stock_actual < requerida:
+                faltantes.append(f"{producto.nombre} (hay {producto.stock_actual.normalize():f}, pide {requerida.normalize():f})")
+        if faltantes:
+            raise StockInsuficienteParaPedido(faltantes)
 
     def _revertir_pedido_a_mercaderia_recibida(self, orden: OrdenEnvio) -> None:
         pedido = self._pedidos.get_by_id(orden.pedido_cliente_id)

@@ -4,6 +4,9 @@ Un único punto de verdad para todo lo configurable: URL de base de datos,
 orígenes permitidos de CORS y la clave con la que se firman las sesiones.
 Nada de valores mágicos repartidos por el código.
 """
+import hashlib
+import hmac
+import logging
 from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -25,9 +28,9 @@ class Settings(BaseSettings):
     # CORS: dominios del frontend (Netlify) autorizados a llamar la API
     cors_origins: str = "http://localhost:5500,http://127.0.0.1:5500"
 
-    # Clave para firmar los tokens de sesión (JWT). En producción es obligatorio
+    # Clave para firmar los tokens de sesión (JWT). En producción hay que
     # definirla con un valor largo y aleatorio: quien la conozca puede emitir
-    # sesiones válidas para cualquier usuario.
+    # sesiones válidas para cualquier usuario. Si falta, ver get_settings().
     secret_key: str = _SECRET_KEY_DESARROLLO
     # Duración de la sesión: un turno de trabajo largo.
     access_token_minutes: int = 12 * 60
@@ -50,8 +53,14 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     settings = Settings()
     if settings.es_produccion and settings.secret_key == _SECRET_KEY_DESARROLLO:
-        raise RuntimeError(
-            "Falta SECRET_KEY: en producción hay que definir una clave propia y aleatoria "
-            "(ej. `python -c \"import secrets; print(secrets.token_urlsafe(48))\"`)."
+        # Sin SECRET_KEY propia no usamos la clave de desarrollo (es pública,
+        # está en el repo). Derivamos una estable de DATABASE_URL: es secreta
+        # y es la misma en todas las instancias de Vercel, así las sesiones
+        # sirven en cualquiera. Igual conviene definir SECRET_KEY: si cambia
+        # la contraseña de la base, se cerrarían todas las sesiones.
+        logging.getLogger(__name__).warning(
+            "SECRET_KEY no está definida: se usa una clave derivada de DATABASE_URL. Definila en las variables de entorno."
         )
+        derivada = hmac.new(settings.database_url.encode(), b"ferreteria-sesiones-v1", hashlib.sha256).hexdigest()
+        settings.secret_key = derivada
     return settings

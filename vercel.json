@@ -1,3 +1,6 @@
 {
+  "functions": {
+    "api/index.py": { "includeFiles": "{alembic.ini,alembic/**}" }
+  },
   "rewrites": [{ "source": "/(.*)", "destination": "/api/index" }]
 }

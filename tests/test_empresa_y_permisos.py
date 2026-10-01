@@ -195,3 +195,47 @@ def test_pedidos_numerados_ped(client):
     })
     assert pedido.status_code == 201, pedido.text
     assert pedido.json()["numero"].startswith(f"PED-{date.today().year}-")
+
+
+def _pedido(client, token, items) -> dict:
+    r = client.post(f"{API}/pedidos-cliente", headers=_auth(token), json={
+        "cliente_nombre": "Constructora", "cliente_direccion": "Ruta 1",
+        "items": [{"producto_id": pid, "cantidad": cant, "precio_unitario": 1000} for pid, cant in items],
+    })
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
+def test_pedido_con_stock_se_envia_sin_comprar(client):
+    admin = _configurar(client)
+    a = _producto_con_stock(client, admin, stock=10)
+    pedido = _pedido(client, admin, [(a["id"], 4), (a["id"], 3)])  # mismo producto en dos líneas: 7
+
+    disp = client.get(f"{API}/pedidos-cliente/{pedido['id']}/disponibilidad", headers=_auth(admin)).json()
+    assert disp == [{"producto_id": a["id"], "producto_nombre": "Cinta", "requerida": 7, "stock": 10, "faltante": 0}]
+
+    envio = client.post(f"{API}/ordenes-envio", headers=_auth(admin), json={
+        "pedido_cliente_id": pedido["id"], "direccion_entrega": "Ruta 1",
+        "items": [{"producto_id": a["id"], "cantidad": 7}],
+    })
+    assert envio.status_code == 201, envio.text
+    assert client.get(f"{API}/pedidos-cliente/{pedido['id']}", headers=_auth(admin)).json()["estado"] == "LISTO_ENVIO"
+
+
+def test_pedido_sin_stock_suficiente_cotiza_solo_lo_que_falta(client):
+    admin = _configurar(client)
+    a = _producto_con_stock(client, admin, stock=10)
+    b = _producto_con_stock(client, admin, stock=2)
+    client.post(f"{API}/proveedores", headers=_auth(admin), json={"razon_social": "Prov", "ruc": "1-1", "email": "p@p.com", "password": "password-123"})
+    pedido = _pedido(client, admin, [(a["id"], 5), (b["id"], 6)])
+
+    envio = client.post(f"{API}/ordenes-envio", headers=_auth(admin), json={
+        "pedido_cliente_id": pedido["id"], "direccion_entrega": "Ruta 1",
+        "items": [{"producto_id": a["id"], "cantidad": 5}, {"producto_id": b["id"], "cantidad": 6}],
+    })
+    assert envio.status_code == 409 and "Pedí cotización" in envio.json()["detail"]
+
+    r = client.post(f"{API}/pedidos-cliente/{pedido['id']}/solicitar-todos?solo_faltantes=true", headers=_auth(admin))
+    assert r.status_code == 200, r.text
+    solicitud = client.get(f"{API}/solicitudes-presupuesto", headers=_auth(admin)).json()[0]
+    assert [(i["producto_id"], i["cantidad_solicitada"]) for i in solicitud["items"]] == [(b["id"], 4)]

@@ -83,7 +83,7 @@ def main() -> None:
         clientes = ClienteService(clientes_repo)
         proveedores = ProveedorService(proveedores_repo, usuarios)
         catalogo = ProveedorProductoService(catalogo_repo)
-        pedidos = PedidoClienteService(pedidos_repo, clientes_repo, proveedores_repo, solicitudes_repo)
+        pedidos = PedidoClienteService(pedidos_repo, clientes_repo, proveedores_repo, solicitudes_repo, productos_repo)
         solicitudes = SolicitudPresupuestoService(solicitudes_repo, proveedores_repo, pedidos_repo, ordenes_compra_repo)
         OrdenCompraService(ordenes_compra_repo, productos_repo, SqlAlchemyMovimientoInventarioRepository(db), pedidos_repo)
 

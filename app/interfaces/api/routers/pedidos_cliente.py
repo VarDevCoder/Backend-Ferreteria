@@ -17,6 +17,7 @@ from app.interfaces.api.deps import (
 )
 from app.interfaces.api.schemas.common import Mensaje, MotivoRequerido
 from app.interfaces.api.schemas.flujo import (
+    DisponibilidadItem,
     ComparacionPedidoResponse,
     ComparacionProducto,
     OfertaCatalogoProveedor,
@@ -79,9 +80,20 @@ def marcar_mercaderia_recibida(pedido_id: int, servicio: PedidoSvc, _usuario: Re
 
 
 @router.post("/{pedido_id}/solicitar-todos", response_model=Mensaje)
-def solicitar_cotizacion_a_todos(pedido_id: int, servicio: PedidoSvc, usuario: RequireAnkorUser) -> Mensaje:
-    _pedido, creadas = servicio.solicitar_cotizacion_todos(pedido_id, usuario.id)
-    return Mensaje(mensaje=f"Se enviaron {creadas} solicitudes de cotización a proveedores")
+def solicitar_cotizacion_a_todos(
+    pedido_id: int, servicio: PedidoSvc, usuario: RequireAnkorUser, solo_faltantes: bool = False
+) -> Mensaje:
+    _pedido, creadas = servicio.solicitar_cotizacion_todos(pedido_id, usuario.id, solo_faltantes=solo_faltantes)
+    alcance = "de lo que falta " if solo_faltantes else ""
+    return Mensaje(mensaje=f"Se enviaron {creadas} solicitudes de cotización {alcance}a proveedores")
+
+
+@router.get(
+    "/{pedido_id}/disponibilidad", response_model=list[DisponibilidadItem],
+    summary="Stock disponible vs. pedido, por producto (para atender desde el depósito o comprar lo que falta)",
+)
+def disponibilidad(pedido_id: int, servicio: PedidoSvc) -> list[DisponibilidadItem]:
+    return [DisponibilidadItem(**d) for d in servicio.disponibilidad(pedido_id)]
 
 
 @router.get("/{pedido_id}/comparacion", response_model=ComparacionPedidoResponse, summary="Comparar ofertas de proveedores para este pedido")

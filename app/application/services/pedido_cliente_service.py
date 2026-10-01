@@ -5,10 +5,11 @@ from decimal import Decimal
 
 from app.domain.entities import PedidoCliente, PedidoClienteItem, SolicitudPresupuesto, SolicitudPresupuestoItem
 from app.domain.enums import EstadoPedidoCliente, EstadoSolicitudPresupuesto
-from app.domain.exceptions import RecursoNoEncontrado, TransicionDeEstadoInvalida
+from app.domain.exceptions import RecursoNoEncontrado, SolicitudInvalida, TransicionDeEstadoInvalida
 from app.domain.repositories import (
     ClienteRepository,
     PedidoClienteRepository,
+    ProductoRepository,
     ProveedorRepository,
     SolicitudPresupuestoRepository,
 )
@@ -21,11 +22,13 @@ class PedidoClienteService:
         clientes: ClienteRepository,
         proveedores: ProveedorRepository,
         solicitudes: SolicitudPresupuestoRepository,
+        productos: ProductoRepository,
     ):
         self._pedidos = pedidos
         self._clientes = clientes
         self._proveedores = proveedores
         self._solicitudes = solicitudes
+        self._productos = productos
 
     def listar(self, estado: str | None = None, busqueda: str | None = None) -> list[PedidoCliente]:
         return self._pedidos.list(estado=estado, busqueda=busqueda)
@@ -154,12 +157,40 @@ class PedidoClienteService:
         pedido.estado = EstadoPedidoCliente.MERCADERIA_RECIBIDA
         return self._pedidos.update(pedido)
 
-    def solicitar_cotizacion_todos(self, pedido_id: int, usuario_id: int) -> tuple[PedidoCliente, int]:
-        """CU-11 modo masivo: genera una SolicitudPresupuesto por cada proveedor activo
-        que todavía no tenga una solicitud vigente para este pedido."""
+    def disponibilidad(self, pedido_id: int) -> list[dict]:
+        """Por producto: cuánto pide el cliente, cuánto hay en stock y cuánto
+        falta comprar. El stock no se reserva: una venta de mostrador puede
+        consumirlo antes del despacho (el despacho vuelve a validar)."""
+        pedido = self.obtener(pedido_id)
+        filas = []
+        for producto_id, requerida in pedido.cantidades_por_producto().items():
+            producto = self._productos.get_by_id(producto_id)
+            stock = producto.stock_actual if producto else Decimal("0")
+            filas.append({
+                "producto_id": producto_id,
+                "producto_nombre": producto.nombre if producto else f"Producto #{producto_id}",
+                "requerida": requerida,
+                "stock": stock,
+                "faltante": max(Decimal("0"), requerida - stock),
+            })
+        return filas
+
+    def solicitar_cotizacion_todos(
+        self, pedido_id: int, usuario_id: int, solo_faltantes: bool = False
+    ) -> tuple[PedidoCliente, int]:
+        """Genera una SolicitudPresupuesto por cada proveedor activo que todavía
+        no tenga una solicitud vigente para este pedido. Con `solo_faltantes`,
+        pide únicamente lo que no alcanza a cubrir el stock."""
         pedido = self.obtener(pedido_id)
         if not pedido.puede_solicitar_cotizacion():
             raise TransicionDeEstadoInvalida("La solicitud no está en un estado válido para cotizar")
+
+        if solo_faltantes:
+            a_cotizar = {d["producto_id"]: d["faltante"] for d in self.disponibilidad(pedido_id) if d["faltante"] > 0}
+            if not a_cotizar:
+                raise SolicitudInvalida("Hay stock de todos los productos: prepará el envío desde stock")
+        else:
+            a_cotizar = pedido.cantidades_por_producto()
 
         proveedores_activos = self._proveedores.list(solo_activos=True)
         if not proveedores_activos:
@@ -181,10 +212,10 @@ class PedidoClienteService:
                 mensaje_solicitud=f"Solicitud de cotización generada automáticamente desde {pedido.numero}.",
                 items=[
                     SolicitudPresupuestoItem(
-                        id=None, solicitud_presupuesto_id=None, producto_id=item.producto_id,
-                        cantidad_solicitada=item.cantidad,
+                        id=None, solicitud_presupuesto_id=None, producto_id=producto_id,
+                        cantidad_solicitada=cantidad,
                     )
-                    for item in pedido.items
+                    for producto_id, cantidad in a_cotizar.items()
                 ],
             )
             self._solicitudes.add(solicitud)

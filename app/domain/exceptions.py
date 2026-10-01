@@ -30,6 +30,16 @@ class StockInsuficiente(DomainError):
         )
 
 
+class StockInsuficienteParaPedido(StockInsuficiente):
+    def __init__(self, faltantes: list[str]):
+        DomainError.__init__(
+            self,
+            "No alcanza el stock para enviar este pedido desde el depósito: "
+            + "; ".join(faltantes)
+            + ". Pedí cotización de lo que falta a tus proveedores.",
+        )
+
+
 class CredencialesInvalidas(DomainError):
     def __init__(self):
         super().__init__("El usuario o la contraseña no son correctos")

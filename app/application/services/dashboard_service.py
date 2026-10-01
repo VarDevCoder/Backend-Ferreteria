@@ -7,6 +7,7 @@ from app.domain.repositories import (
     OrdenEnvioRepository,
     PedidoClienteRepository,
     ProductoRepository,
+    ProveedorRepository,
     SolicitudPresupuestoRepository,
 )
 
@@ -41,7 +42,9 @@ class DashboardService:
         ordenes_compra: OrdenCompraRepository,
         ordenes_envio: OrdenEnvioRepository,
         productos: ProductoRepository,
+        proveedores: ProveedorRepository,
     ):
+        self._proveedores = proveedores
         self._pedidos = pedidos
         self._solicitudes = solicitudes
         self._ordenes_compra = ordenes_compra
@@ -68,9 +71,11 @@ class DashboardService:
             actividades.append(
                 ActividadReciente("pedido", pedido.numero, pedido.cliente_nombre, pedido.estado.value, pedido.created_at, f"/pedidos-cliente/{pedido.id}")
             )
+        nombre_proveedor = {p.id: p.razon_social for p in self._proveedores.list()}
         for solicitud in self._solicitudes.list()[:8]:
+            proveedor = nombre_proveedor.get(solicitud.proveedor_id, f"Proveedor #{solicitud.proveedor_id}")
             actividades.append(
-                ActividadReciente("cotizacion", solicitud.numero, f"Proveedor #{solicitud.proveedor_id}", solicitud.estado.value, solicitud.created_at, f"/solicitudes-presupuesto/{solicitud.id}")
+                ActividadReciente("cotizacion", solicitud.numero, proveedor, solicitud.estado.value, solicitud.created_at, f"/solicitudes-presupuesto/{solicitud.id}")
             )
         for orden in self._ordenes_compra.list()[:8]:
             actividades.append(

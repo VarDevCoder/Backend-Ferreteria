@@ -4,6 +4,7 @@ from pathlib import Path
 
 from sqlalchemy import create_engine
 from sqlalchemy import pool
+from sqlalchemy import text
 
 from alembic import context
 
@@ -13,6 +14,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app.core.config import get_settings  # noqa: E402
 from app.infrastructure.db.models import Base  # noqa: E402
 from app.infrastructure.db.session import engine_args  # noqa: E402
+
+# Identificador arbitrario (fijo) del lock de migraciones.
+_LOCK_MIGRACIONES = 7_301_955
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -24,7 +28,8 @@ config.set_main_option("sqlalchemy.url", get_settings().database_url)
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
-if config.config_file_name is not None:
+# Al migrar desde la app (Vercel) no se toca el logging del servidor.
+if config.config_file_name is not None and config.attributes.get("configurar_logging", True):
     fileConfig(config.config_file_name)
 
 # Metadata de nuestros modelos: esto es lo que habilita `alembic revision --autogenerate`.
@@ -77,6 +82,11 @@ def run_migrations_online() -> None:
         )
 
         with context.begin_transaction():
+            # En Vercel varias instancias pueden arrancar a la vez y todas
+            # intentan migrar: un lock de Postgres hace que una migre y las
+            # demás esperen (y después vean que no queda nada por hacer).
+            # Se libera solo al terminar la transacción.
+            connection.execute(text("SELECT pg_advisory_xact_lock(:clave)"), {"clave": _LOCK_MIGRACIONES})
             context.run_migrations()
 
 

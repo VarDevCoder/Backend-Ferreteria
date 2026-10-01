@@ -149,8 +149,9 @@ def get_pedido_cliente_service(
     clientes: Annotated[SqlAlchemyClienteRepository, Depends(get_cliente_repo)],
     proveedores: Annotated[SqlAlchemyProveedorRepository, Depends(get_proveedor_repo)],
     solicitudes: Annotated[SqlAlchemySolicitudPresupuestoRepository, Depends(get_solicitud_repo)],
+    productos: Annotated[SqlAlchemyProductoRepository, Depends(get_producto_repo)],
 ) -> PedidoClienteService:
-    return PedidoClienteService(pedidos, clientes, proveedores, solicitudes)
+    return PedidoClienteService(pedidos, clientes, proveedores, solicitudes, productos)
 
 
 def get_solicitud_service(
@@ -202,8 +203,9 @@ def get_dashboard_service(
     ordenes_compra: Annotated[SqlAlchemyOrdenCompraRepository, Depends(get_orden_compra_repo)],
     ordenes_envio: Annotated[SqlAlchemyOrdenEnvioRepository, Depends(get_orden_envio_repo)],
     productos: Annotated[SqlAlchemyProductoRepository, Depends(get_producto_repo)],
+    proveedores: Annotated[SqlAlchemyProveedorRepository, Depends(get_proveedor_repo)],
 ) -> DashboardService:
-    return DashboardService(pedidos, solicitudes, ordenes_compra, ordenes_envio, productos)
+    return DashboardService(pedidos, solicitudes, ordenes_compra, ordenes_envio, productos, proveedores)
 
 
 def get_usuario_service(usuarios: Annotated[SqlAlchemyUsuarioRepository, Depends(get_usuario_repo)]) -> UsuarioService:

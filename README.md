@@ -94,7 +94,7 @@ Todos bajo el prefijo `/api/v1` (salvo el chequeo de salud `GET /`).
 | Dashboard | `GET /dashboard` |
 | Catálogo | `/categorias`, `/productos`, `GET /productos/buscar?q=` (caja rápida: código exacto o palabras del nombre) |
 | Contactos | `/clientes`, `/clientes/ciudades`, `/proveedores`, `/proveedor-productos` |
-| Pedidos de cliente | `/pedidos-cliente` — `procesar`, `solicitar-todos`, `comparacion`, `mercaderia-recibida`, `cancelar` |
+| Pedidos de cliente | `/pedidos-cliente` — `disponibilidad` (stock vs. pedido), `procesar`, `solicitar-todos?solo_faltantes=`, `comparacion`, `mercaderia-recibida`, `cancelar` |
 | Solicitudes de presupuesto | `/solicitudes-presupuesto` — `ver`, `cotizar`, `sin-stock`, `aceptar`, `rechazar` |
 | Órdenes de compra | `/ordenes-compra` — `enviar`, `confirmar`, `en-transito`, `recibir` (ingresa stock), `cancelar` |
 | Órdenes de envío | `/ordenes-envio` — `lista-despachar`, `despachar` (descuenta stock), `entregar`, `devolver`, `cancelar` |
@@ -167,24 +167,23 @@ serverless de Python:
   `/api/v1/...` llegan a FastAPI.
 - `.python-version` fija Python 3.12. El *Framework Preset* del proyecto es **Other**.
 
-El proyecto **no está conectado a GitHub**: un push no despliega. Se despliega desde la raíz
-del repo con Vercel CLI:
+**Despliegue:** un `git push` a `main` despliega solo (Vercel está conectado al repo).
 
-```bash
-vercel link --yes --project ankor-backend   # una sola vez; crea .vercel/ (ignorado)
-vercel --prod
-```
-
-- `DATABASE_URL`, `CORS_ORIGINS`, `ENVIRONMENT` y **`SECRET_KEY`** se cargan en
-  *Settings → Environment Variables* (o `vercel env add NOMBRE production --value "..."`) y no se
-  commitean. Sin `SECRET_KEY` la app **no arranca** en producción.
-  `DATABASE_URL` usa el host **`-pooler`** de Neon: cada request serverless puede abrir su conexión.
-- **Migraciones y seed no corren en el deploy.** Tras un cambio de esquema, correrlos desde una
-  máquina local contra la URL **directa** de Neon (sin `-pooler`) **antes** de desplegar el código nuevo:
-  `alembic upgrade head`. Los datos de ejemplo son opcionales: `python seed.py --demo`
-  (nunca en la base de un cliente real).
-- En el plan Hobby, Vercel **bloquea** (estado `BLOCKED`) un deploy si el autor del commit en
-  `HEAD` no es el dueño de la cuenta. Desplegar con un commit propio en la punta de la rama.
+- **Migraciones automáticas:** `api/index.py` corre `alembic upgrade head` al arrancar cada
+  instancia, antes de cargar la app. Si la base ya está al día solo lee la versión. Un lock de
+  Postgres (`pg_advisory_xact_lock` en `alembic/env.py`) evita que dos instancias migren a la vez.
+  `vercel.json` incluye `alembic.ini` y `alembic/` en el paquete de la función.
+  Para migrar a mano (ventana de mantenimiento): `AUTO_MIGRATE=false` y `alembic upgrade head`
+  contra la URL **directa** de Neon (sin `-pooler`).
+- **Variables** (*Settings → Environment Variables*, no se commitean): `DATABASE_URL` (host
+  **`-pooler`** de Neon), `CORS_ORIGINS`, `ENVIRONMENT=production` y **`SECRET_KEY`**.
+  Si falta `SECRET_KEY`, la app deriva una clave estable de `DATABASE_URL` y lo avisa en el log;
+  conviene definirla igual (si cambia la contraseña de la base se cerrarían todas las sesiones).
+- Los datos de ejemplo no se cargan en el deploy: `python seed.py --demo` a mano, nunca en la
+  base de un cliente real.
+- En el plan Hobby, Vercel puede **bloquear** (estado `BLOCKED`) un deploy si el autor del commit
+  en `HEAD` no es miembro del proyecto. Se destraba con *Redeploy* desde el panel de Vercel o con
+  un commit propio en la punta de `main`.
 
 Verificación rápida:
 
@@ -259,7 +258,8 @@ integración, la corrección de los dos bugs y una primera versión de reportes 
 estimada, ventas por día y por medio de pago). El código de barras se guarda en el código del
 producto y la **caja rápida** ya está hecha: buscador en vivo por código o palabras, lista para
 lector de código de barras (código + Enter agrega el producto), total, vuelto y atajos F2/F9.
-Los pedidos se numeran `PED-AAAA-NNNN` (antes "Solicitud #N") y la comparación de ofertas muestra
+Los **pedidos con stock se envían sin pasar por compras** (orden de envío directa) y, si falta
+algo, se cotiza **solo lo que falta**. Los pedidos se numeran `PED-AAAA-NNNN` (antes "Solicitud #N") y la comparación de ofertas muestra
 el nombre real del proveedor.
 
 **Respuestas del negocio (oct. 2026):** Paraguay; se cobra en guaraníes y dólares; tiene que haber
