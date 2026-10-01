@@ -1,27 +1,35 @@
 """Raíz de composición: arma repositorios y servicios a partir de la sesión de
-DB de cada request.
+DB de cada request, y resuelve quién es el usuario que llama.
 
-Este MVP es de exhibición directa al cliente: **no hay login**. Todas las
-pantallas y endpoints están abiertos. El único motivo por el que sigue
-existiendo un "usuario actual" es que varias tablas del dominio (pedidos,
-órdenes) guardan `usuario_id` como dato de auditoría — quién generó cada
-documento — así que se resuelve automáticamente contra un usuario demo
-sembrado por `seed.py`, sin pedir credenciales.
+Autenticación: cada request trae `Authorization: Bearer <token>` (lo emite
+`POST /auth/login`). `get_current_user` valida el token y vuelve a leer al
+usuario de la base, así un usuario desactivado pierde el acceso al instante.
+
+Autorización: `requiere_modulo(Modulo.X)` se aplica a nivel de router en
+`main.py`. Las consultas (GET) quedan abiertas a todo el personal; crear,
+modificar o cambiar de estado exige un rol habilitado para ese módulo
+(ver `app.application.permisos`).
 """
+from collections.abc import Callable
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from app.application.services.caja_service import CajaService
 from app.application.services.catalogo_service import CategoriaService, ProductoService
 from app.application.services.contactos_service import ClienteService, ProveedorProductoService, ProveedorService
+from app.application.permisos import Modulo, puede_leer, puede_modificar
 from app.application.services.dashboard_service import DashboardService
+from app.application.services.empresa_service import EmpresaService
 from app.application.services.inventario_service import InventarioService
 from app.application.services.orden_compra_service import OrdenCompraService
 from app.application.services.orden_envio_service import OrdenEnvioService
 from app.application.services.pedido_cliente_service import PedidoClienteService
+from app.application.services.reporte_service import ReporteService
 from app.application.services.solicitud_presupuesto_service import SolicitudPresupuestoService
+from app.application.services.usuario_service import UsuarioService
 from app.domain.entities import Usuario
 from app.infrastructure.db.repositories.catalogo_repository import SqlAlchemyCategoriaRepository, SqlAlchemyProductoRepository
 from app.infrastructure.db.repositories.contactos_repository import (
@@ -38,18 +46,23 @@ from app.infrastructure.db.repositories.flujo_repository import (
     SqlAlchemySolicitudPresupuestoRepository,
     SqlAlchemyVentaMostradorRepository,
 )
+from app.infrastructure.db.repositories.empresa_repository import SqlAlchemyEmpresaRepository
+from app.infrastructure.db.repositories.reporte_repository import SqlAlchemyReporteRepository
 from app.infrastructure.db.repositories.usuario_repository import SqlAlchemyUsuarioRepository
 from app.infrastructure.db.session import get_db
+from app.infrastructure.security.tokens import leer_token
 
 DbSession = Annotated[Session, Depends(get_db)]
-
-DEMO_USER_EMAIL = "demo@ankor.local"
 
 
 # --- Repositorios ---------------------------------------------------------------
 
 def get_usuario_repo(db: DbSession) -> SqlAlchemyUsuarioRepository:
     return SqlAlchemyUsuarioRepository(db)
+
+
+def get_empresa_repo(db: DbSession) -> SqlAlchemyEmpresaRepository:
+    return SqlAlchemyEmpresaRepository(db)
 
 
 def get_categoria_repo(db: DbSession) -> SqlAlchemyCategoriaRepository:
@@ -106,8 +119,11 @@ def get_categoria_service(repo: Annotated[SqlAlchemyCategoriaRepository, Depends
     return CategoriaService(repo)
 
 
-def get_producto_service(repo: Annotated[SqlAlchemyProductoRepository, Depends(get_producto_repo)]) -> ProductoService:
-    return ProductoService(repo)
+def get_producto_service(
+    repo: Annotated[SqlAlchemyProductoRepository, Depends(get_producto_repo)],
+    empresa: Annotated[SqlAlchemyEmpresaRepository, Depends(get_empresa_repo)],
+) -> ProductoService:
+    return ProductoService(repo, margen_defecto=empresa.get().margen_ganancia_defecto)
 
 
 def get_cliente_service(repo: Annotated[SqlAlchemyClienteRepository, Depends(get_cliente_repo)]) -> ClienteService:
@@ -189,23 +205,66 @@ def get_dashboard_service(
     return DashboardService(pedidos, solicitudes, ordenes_compra, ordenes_envio, productos)
 
 
-# --- "Usuario actual" sin login: siempre el usuario demo sembrado ---------------------
+def get_usuario_service(usuarios: Annotated[SqlAlchemyUsuarioRepository, Depends(get_usuario_repo)]) -> UsuarioService:
+    return UsuarioService(usuarios)
 
-def get_current_user(usuarios: Annotated[SqlAlchemyUsuarioRepository, Depends(get_usuario_repo)]) -> Usuario:
-    usuario = usuarios.get_by_email(DEMO_USER_EMAIL)
-    if usuario is None:
-        raise HTTPException(
-            status.HTTP_500_INTERNAL_SERVER_ERROR,
-            "Falta el usuario demo. Corré `python seed.py` para sembrar los datos de ejemplo.",
-        )
+
+def get_empresa_service(
+    empresa: Annotated[SqlAlchemyEmpresaRepository, Depends(get_empresa_repo)],
+    usuarios: Annotated[SqlAlchemyUsuarioRepository, Depends(get_usuario_repo)],
+) -> EmpresaService:
+    return EmpresaService(empresa, usuarios)
+
+
+def get_reporte_service(db: DbSession) -> ReporteService:
+    return ReporteService(SqlAlchemyReporteRepository(db))
+
+
+# --- Usuario actual y permisos ---------------------------------------------------
+
+_bearer = HTTPBearer(auto_error=False)
+
+_NO_AUTENTICADO = HTTPException(
+    status.HTTP_401_UNAUTHORIZED,
+    "Tu sesión no es válida o venció. Volvé a ingresar",
+    headers={"WWW-Authenticate": "Bearer"},
+)
+
+
+def get_current_user(
+    credenciales: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)],
+    usuarios: Annotated[SqlAlchemyUsuarioRepository, Depends(get_usuario_repo)],
+) -> Usuario:
+    if credenciales is None:
+        raise _NO_AUTENTICADO
+    usuario_id = leer_token(credenciales.credentials)
+    usuario = usuarios.get_by_id(usuario_id) if usuario_id is not None else None
+    if usuario is None or not usuario.es_interno() or not usuario.activo:
+        raise _NO_AUTENTICADO
     return usuario
 
 
 CurrentUser = Annotated[Usuario, Depends(get_current_user)]
 
-# El MVP no distingue permisos por rol (no hay sesión que los transporte);
-# estos alias quedan solo para que los routers lean con intención ("esta
-# acción normalmente la hace Compras/Depósito/Admin") sin bloquear a nadie.
+_METODOS_DE_LECTURA = {"GET", "HEAD", "OPTIONS"}
+
+
+def requiere_modulo(modulo: Modulo) -> Callable[..., None]:
+    """Dependency de router: lectura para todo el personal (salvo módulos
+    sensibles), escritura solo para los roles habilitados en el módulo."""
+
+    def verificar(request: Request, usuario: CurrentUser) -> None:
+        es_lectura = request.method in _METODOS_DE_LECTURA
+        permitido = puede_leer(usuario.rol, modulo) if es_lectura else puede_modificar(usuario.rol, modulo)
+        if not permitido:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Tu rol no tiene permiso para realizar esta acción")
+
+    return verificar
+
+
+# Alias históricos que usan los routers para obtener al usuario autenticado
+# (quién generó cada documento). El control de permisos lo hace
+# `requiere_modulo` a nivel de router.
 RequireAnkorUser = CurrentUser
 RequireProveedor = CurrentUser
 RequireAdmin = CurrentUser

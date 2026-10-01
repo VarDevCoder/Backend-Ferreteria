@@ -3,6 +3,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends
 
+from app.application.permisos import Modulo
 from app.application.services.contactos_service import ClienteService, ProveedorProductoService, ProveedorService
 from app.domain.entities import Proveedor
 from app.interfaces.api.deps import (
@@ -11,6 +12,7 @@ from app.interfaces.api.deps import (
     get_cliente_service,
     get_proveedor_producto_service,
     get_proveedor_service,
+    requiere_modulo,
 )
 from app.interfaces.api.schemas.common import Mensaje
 from app.interfaces.api.schemas.contactos import (
@@ -27,6 +29,11 @@ from app.interfaces.api.schemas.contactos import (
 
 router = APIRouter(tags=["Contactos"])
 
+# Clientes y proveedores comparten router pero no permisos: el mostrador da
+# de alta clientes, pero los proveedores y sus precios los maneja compras.
+_PERMISO_CLIENTES = [Depends(requiere_modulo(Modulo.CLIENTES))]
+_PERMISO_PROVEEDORES = [Depends(requiere_modulo(Modulo.PROVEEDORES))]
+
 ClienteSvc = Annotated[ClienteService, Depends(get_cliente_service)]
 ProveedorSvc = Annotated[ProveedorService, Depends(get_proveedor_service)]
 ProveedorProductoSvc = Annotated[ProveedorProductoService, Depends(get_proveedor_producto_service)]
@@ -41,94 +48,94 @@ def _proveedor_response(p: Proveedor) -> ProveedorResponse:
 
 # --- Clientes ---------------------------------------------------------------------
 
-@router.get("/clientes", response_model=list[ClienteResponse])
+@router.get("/clientes", dependencies=_PERMISO_CLIENTES, response_model=list[ClienteResponse])
 def listar_clientes(servicio: ClienteSvc, busqueda: str | None = None, activo: bool | None = None, ciudad: str | None = None) -> list[ClienteResponse]:
     return [ClienteResponse(**vars(c)) for c in servicio.listar(busqueda, activo, ciudad)]
 
 
-@router.get("/clientes/ciudades", response_model=list[str])
+@router.get("/clientes/ciudades", dependencies=_PERMISO_CLIENTES, response_model=list[str])
 def ciudades_de_clientes(servicio: ClienteSvc) -> list[str]:
     return servicio.ciudades()
 
 
-@router.get("/clientes/{cliente_id}", response_model=ClienteResponse)
+@router.get("/clientes/{cliente_id}", dependencies=_PERMISO_CLIENTES, response_model=ClienteResponse)
 def obtener_cliente(cliente_id: int, servicio: ClienteSvc) -> ClienteResponse:
     return ClienteResponse(**vars(servicio.obtener(cliente_id)))
 
 
-@router.post("/clientes", response_model=ClienteResponse, status_code=201)
+@router.post("/clientes", dependencies=_PERMISO_CLIENTES, response_model=ClienteResponse, status_code=201)
 def crear_cliente(datos: ClienteCreate, servicio: ClienteSvc, _usuario: RequireAnkorUser) -> ClienteResponse:
     return ClienteResponse(**vars(servicio.crear(**datos.model_dump())))
 
 
-@router.put("/clientes/{cliente_id}", response_model=ClienteResponse)
+@router.put("/clientes/{cliente_id}", dependencies=_PERMISO_CLIENTES, response_model=ClienteResponse)
 def actualizar_cliente(cliente_id: int, datos: ClienteUpdate, servicio: ClienteSvc, _usuario: RequireAnkorUser) -> ClienteResponse:
     return ClienteResponse(**vars(servicio.actualizar(cliente_id, **datos.model_dump())))
 
 
-@router.delete("/clientes/{cliente_id}", response_model=Mensaje)
+@router.delete("/clientes/{cliente_id}", dependencies=_PERMISO_CLIENTES, response_model=Mensaje)
 def eliminar_cliente(cliente_id: int, servicio: ClienteSvc, _usuario: RequireAnkorUser) -> Mensaje:
     servicio.eliminar(cliente_id)
     return Mensaje(mensaje="Cliente eliminado exitosamente")
 
 
-@router.post("/clientes/{cliente_id}/toggle-activo", response_model=ClienteResponse)
+@router.post("/clientes/{cliente_id}/toggle-activo", dependencies=_PERMISO_CLIENTES, response_model=ClienteResponse)
 def toggle_activo_cliente(cliente_id: int, servicio: ClienteSvc, _usuario: RequireAnkorUser) -> ClienteResponse:
     return ClienteResponse(**vars(servicio.toggle_activo(cliente_id)))
 
 
 # --- Proveedores ---------------------------------------------------------------------
 
-@router.get("/proveedores", response_model=list[ProveedorResponse])
+@router.get("/proveedores", dependencies=_PERMISO_PROVEEDORES, response_model=list[ProveedorResponse])
 def listar_proveedores(servicio: ProveedorSvc, solo_activos: bool = False) -> list[ProveedorResponse]:
     return [_proveedor_response(p) for p in servicio.listar(solo_activos)]
 
 
-@router.get("/proveedores/{proveedor_id}", response_model=ProveedorResponse)
+@router.get("/proveedores/{proveedor_id}", dependencies=_PERMISO_PROVEEDORES, response_model=ProveedorResponse)
 def obtener_proveedor(proveedor_id: int, servicio: ProveedorSvc) -> ProveedorResponse:
     return _proveedor_response(servicio.obtener(proveedor_id))
 
 
-@router.post("/proveedores", response_model=ProveedorResponse, status_code=201)
+@router.post("/proveedores", dependencies=_PERMISO_PROVEEDORES, response_model=ProveedorResponse, status_code=201)
 def crear_proveedor(datos: ProveedorCreate, servicio: ProveedorSvc, _usuario: RequireAnkorUser) -> ProveedorResponse:
     return _proveedor_response(servicio.crear(**datos.model_dump()))
 
 
-@router.put("/proveedores/{proveedor_id}", response_model=ProveedorResponse)
+@router.put("/proveedores/{proveedor_id}", dependencies=_PERMISO_PROVEEDORES, response_model=ProveedorResponse)
 def actualizar_proveedor(proveedor_id: int, datos: ProveedorUpdate, servicio: ProveedorSvc, _usuario: RequireAnkorUser) -> ProveedorResponse:
     return _proveedor_response(servicio.actualizar(proveedor_id, **datos.model_dump()))
 
 
-@router.post("/proveedores/{proveedor_id}/toggle-activo", response_model=ProveedorResponse)
+@router.post("/proveedores/{proveedor_id}/toggle-activo", dependencies=_PERMISO_PROVEEDORES, response_model=ProveedorResponse)
 def toggle_activo_proveedor(proveedor_id: int, servicio: ProveedorSvc, _usuario: RequireAnkorUser) -> ProveedorResponse:
     return _proveedor_response(servicio.toggle_activo(proveedor_id))
 
 
 # --- Catálogo por proveedor ---------------------------------------------------------------------
 
-@router.get("/proveedor-productos", response_model=list[ProveedorProductoResponse])
+@router.get("/proveedor-productos", dependencies=_PERMISO_PROVEEDORES, response_model=list[ProveedorProductoResponse])
 def listar_catalogo_proveedor(
     servicio: ProveedorProductoSvc, proveedor_id: int | None = None, producto_id: int | None = None, disponible: bool | None = None
 ) -> list[ProveedorProductoResponse]:
     return [ProveedorProductoResponse(**vars(i)) for i in servicio.listar(proveedor_id, producto_id, disponible)]
 
 
-@router.post("/proveedor-productos", response_model=ProveedorProductoResponse, status_code=201)
+@router.post("/proveedor-productos", dependencies=_PERMISO_PROVEEDORES, response_model=ProveedorProductoResponse, status_code=201)
 def agregar_producto_a_catalogo(datos: ProveedorProductoCreate, servicio: ProveedorProductoSvc, _usuario: CurrentUser) -> ProveedorProductoResponse:
     return ProveedorProductoResponse(**vars(servicio.crear(**datos.model_dump())))
 
 
-@router.put("/proveedor-productos/{item_id}", response_model=ProveedorProductoResponse)
+@router.put("/proveedor-productos/{item_id}", dependencies=_PERMISO_PROVEEDORES, response_model=ProveedorProductoResponse)
 def actualizar_producto_de_catalogo(item_id: int, datos: ProveedorProductoUpdate, servicio: ProveedorProductoSvc, _usuario: CurrentUser) -> ProveedorProductoResponse:
     return ProveedorProductoResponse(**vars(servicio.actualizar(item_id, **datos.model_dump())))
 
 
-@router.delete("/proveedor-productos/{item_id}", response_model=Mensaje)
+@router.delete("/proveedor-productos/{item_id}", dependencies=_PERMISO_PROVEEDORES, response_model=Mensaje)
 def eliminar_producto_de_catalogo(item_id: int, servicio: ProveedorProductoSvc, _usuario: CurrentUser) -> Mensaje:
     servicio.eliminar(item_id)
     return Mensaje(mensaje="Producto quitado del catálogo")
 
 
-@router.post("/proveedor-productos/{item_id}/toggle-disponible", response_model=ProveedorProductoResponse)
+@router.post("/proveedor-productos/{item_id}/toggle-disponible", dependencies=_PERMISO_PROVEEDORES, response_model=ProveedorProductoResponse)
 def toggle_disponible_producto(item_id: int, servicio: ProveedorProductoSvc, _usuario: CurrentUser) -> ProveedorProductoResponse:
     return ProveedorProductoResponse(**vars(servicio.toggle_disponible(item_id)))

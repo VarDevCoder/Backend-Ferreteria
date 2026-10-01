@@ -33,11 +33,32 @@ class UsuarioModel(Base):
     name: Mapped[str] = mapped_column(String(255))
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(255))
-    rol: Mapped[str] = mapped_column(String(20), default="ankor_user")
+    rol: Mapped[str] = mapped_column(String(20), default="vendedor")
     activo: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     proveedor: Mapped["ProveedorModel | None"] = relationship(back_populates="user", uselist=False)
+
+
+class EmpresaModel(Base):
+    """Configuración de la ferretería. Siempre una única fila con id=1."""
+
+    __tablename__ = "empresa"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    nombre_comercial: Mapped[str] = mapped_column(String(255))
+    razon_social: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    ruc: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    direccion: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ciudad: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    telefono: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    moneda_codigo: Mapped[str] = mapped_column(String(3), default="PYG")
+    moneda_simbolo: Mapped[str] = mapped_column(String(10), default="Gs.")
+    locale: Mapped[str] = mapped_column(String(20), default="es-PY")
+    iva_porcentaje: Mapped[int] = mapped_column(Integer, default=10)
+    margen_ganancia_defecto: Mapped[int] = mapped_column(Integer, default=25)
+    pie_ticket: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class CategoriaModel(Base):

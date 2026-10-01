@@ -32,18 +32,40 @@ class Usuario:
     name: str
     email: str
     password_hash: str
-    rol: RolUsuario = RolUsuario.ANKOR_USER
+    rol: RolUsuario = RolUsuario.VENDEDOR
     activo: bool = True
     created_at: datetime | None = None
 
     def es_admin(self) -> bool:
         return self.rol == RolUsuario.ADMIN
 
-    def es_ankor_user(self) -> bool:
-        return self.rol in (RolUsuario.ANKOR_USER, RolUsuario.ADMIN)
+    def es_interno(self) -> bool:
+        """Personal de la ferretería (puede entrar al sistema)."""
+        return self.rol in RolUsuario.internos()
 
     def es_proveedor(self) -> bool:
         return self.rol == RolUsuario.PROVEEDOR
+
+
+@dataclass
+class Empresa:
+    """Datos de la ferretería que usa el sistema: aparecen en la pantalla de
+    ingreso, en el encabezado y en los tickets. Hay una sola fila."""
+
+    nombre_comercial: str = "Mi Ferretería"
+    razon_social: str | None = None
+    ruc: str | None = None
+    direccion: str | None = None
+    ciudad: str | None = None
+    telefono: str | None = None
+    email: str | None = None
+    # Los importes se guardan en unidades enteras de la moneda (sin centavos).
+    moneda_codigo: str = "PYG"
+    moneda_simbolo: str = "Gs."
+    locale: str = "es-PY"
+    iva_porcentaje: int = 10
+    margen_ganancia_defecto: int = 25
+    pie_ticket: str | None = "¡Gracias por su compra!"
 
 
 @dataclass

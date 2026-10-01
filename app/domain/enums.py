@@ -1,4 +1,4 @@
-"""Enumeraciones del dominio ANKOR.
+"""Enumeraciones del dominio.
 
 Son la fuente de verdad de los estados de negocio. La capa de infraestructura
 los persiste como texto; la capa de aplicación los usa para decidir qué
@@ -8,9 +8,19 @@ from enum import StrEnum
 
 
 class RolUsuario(StrEnum):
-    ADMIN = "admin"
-    ANKOR_USER = "ankor_user"
+    """Roles del personal de la ferretería (más el de proveedor, que no entra
+    al sistema interno). Qué puede hacer cada uno está en
+    `app.application.permisos`."""
+
+    ADMIN = "admin"            # dueño / gerente: todo, incluidos usuarios y configuración
+    ENCARGADO = "encargado"    # encargado de sucursal: toda la operación, sin usuarios ni configuración
+    VENDEDOR = "vendedor"      # mostrador: caja, pedidos y clientes
+    DEPOSITO = "deposito"      # depósito: inventario, recepción de compras y envíos
     PROVEEDOR = "proveedor"
+
+    @classmethod
+    def internos(cls) -> tuple["RolUsuario", ...]:
+        return (cls.ADMIN, cls.ENCARGADO, cls.VENDEDOR, cls.DEPOSITO)
 
 
 class UnidadMedida(StrEnum):

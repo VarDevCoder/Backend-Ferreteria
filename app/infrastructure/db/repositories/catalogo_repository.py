@@ -80,6 +80,10 @@ class SqlAlchemyProductoRepository:
         row = self._session.get(ProductoModel, producto_id)
         return self._to_entity(row) if row else None
 
+    def get_by_codigo(self, codigo: str) -> Producto | None:
+        row = self._session.execute(select(ProductoModel).where(ProductoModel.codigo == codigo)).scalar_one_or_none()
+        return self._to_entity(row) if row else None
+
     def add(self, producto: Producto) -> Producto:
         row = self._to_model(producto)
         self._session.add(row)

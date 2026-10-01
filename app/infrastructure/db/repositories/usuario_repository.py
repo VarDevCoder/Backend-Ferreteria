@@ -1,4 +1,4 @@
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.domain.entities import Usuario
@@ -41,6 +41,20 @@ class SqlAlchemyUsuarioRepository:
     def list_by_rol(self, rol: str) -> list[Usuario]:
         rows = self._session.execute(select(UsuarioModel).where(UsuarioModel.rol == rol)).scalars().all()
         return [self._to_entity(r) for r in rows]
+
+    def list_internos(self) -> list[Usuario]:
+        roles = [r.value for r in RolUsuario.internos()]
+        rows = self._session.execute(
+            select(UsuarioModel).where(UsuarioModel.rol.in_(roles)).order_by(UsuarioModel.name)
+        ).scalars().all()
+        return [self._to_entity(r) for r in rows]
+
+    def contar_internos(self, rol: RolUsuario | None = None, solo_activos: bool = False) -> int:
+        roles = [rol.value] if rol else [r.value for r in RolUsuario.internos()]
+        stmt = select(func.count()).select_from(UsuarioModel).where(UsuarioModel.rol.in_(roles))
+        if solo_activos:
+            stmt = stmt.where(UsuarioModel.activo.is_(True))
+        return self._session.execute(stmt).scalar_one()
 
     @staticmethod
     def _to_entity(row: UsuarioModel) -> Usuario:

@@ -1,11 +1,17 @@
-"""Siembra datos de ejemplo para la demo: el usuario interno fijo que usan los
-endpoints (no hay login), categorías, productos, clientes, proveedores con su
-catálogo, y un par de pedidos ya avanzados en distintos puntos del flujo para
-que la demo no arranque con las pantallas vacías.
+"""Siembra datos de ejemplo para una demo: empresa ficticia, un usuario por
+rol, categorías, productos con stock inicial, clientes, proveedores con su
+catálogo y un pedido avanzado en el flujo, para que la demo no arranque con
+las pantallas vacías.
+
+Solo corre si se pide explícitamente (variable SEED_DEMO=true o `--demo`).
+Una empresa real NO usa este script: arranca con la base vacía y el primer
+ingreso al sistema pide cargar los datos de la ferretería y crear el
+usuario administrador.
 
 Uso:
-    python seed.py            # crea los datos si no existen (idempotente)
-    python seed.py --reset    # borra todo el esquema y lo vuelve a crear
+    python seed.py                   # no hace nada salvo que SEED_DEMO=true
+    python seed.py --demo            # crea los datos demo si no existen (idempotente)
+    python seed.py --demo --reset    # borra todo el esquema y lo vuelve a crear
 """
 from __future__ import annotations
 
@@ -17,7 +23,9 @@ from app.application.services.contactos_service import ClienteService, Proveedor
 from app.application.services.orden_compra_service import OrdenCompraService
 from app.application.services.pedido_cliente_service import PedidoClienteService
 from app.application.services.solicitud_presupuesto_service import SolicitudPresupuestoService
-from app.domain.entities import Usuario
+from app.application.services.inventario_service import InventarioService
+from app.core.config import get_settings
+from app.domain.entities import Empresa, Usuario
 from app.domain.enums import RolUsuario
 from app.infrastructure.db.models import Base
 from app.infrastructure.db.repositories.catalogo_repository import SqlAlchemyCategoriaRepository, SqlAlchemyProductoRepository
@@ -32,13 +40,26 @@ from app.infrastructure.db.repositories.flujo_repository import (
     SqlAlchemyPedidoClienteRepository,
     SqlAlchemySolicitudPresupuestoRepository,
 )
+from app.infrastructure.db.repositories.empresa_repository import SqlAlchemyEmpresaRepository
 from app.infrastructure.db.repositories.usuario_repository import SqlAlchemyUsuarioRepository
 from app.infrastructure.db.session import SessionLocal, engine
 from app.infrastructure.security.password_hasher import hash_password
-from app.interfaces.api.deps import DEMO_USER_EMAIL
+
+DEMO_PASSWORD = "demo12345"
+# email, nombre, rol. El primero es el admin con el que se presenta la demo.
+USUARIOS_DEMO = [
+    ("demo@ferreteria.local", "Admin Demo", RolUsuario.ADMIN),
+    ("encargado@ferreteria.local", "Encargado Demo", RolUsuario.ENCARGADO),
+    ("vendedor@ferreteria.local", "Vendedor Demo", RolUsuario.VENDEDOR),
+    ("deposito@ferreteria.local", "Depósito Demo", RolUsuario.DEPOSITO),
+]
 
 
 def main() -> None:
+    if not ("--demo" in sys.argv or get_settings().seed_demo):
+        print("SEED_DEMO no está activo: no se cargan datos de ejemplo.")
+        return
+
     if "--reset" in sys.argv:
         print("Recreando el esquema completo...")
         Base.metadata.drop_all(engine)
@@ -66,15 +87,18 @@ def main() -> None:
         solicitudes = SolicitudPresupuestoService(solicitudes_repo, proveedores_repo, pedidos_repo, ordenes_compra_repo)
         OrdenCompraService(ordenes_compra_repo, productos_repo, SqlAlchemyMovimientoInventarioRepository(db), pedidos_repo)
 
-        demo_user = usuarios.get_by_email(DEMO_USER_EMAIL)
-        if demo_user is None:
-            demo_user = usuarios.add(
-                Usuario(
-                    id=None, name="Usuario Demo", email=DEMO_USER_EMAIL,
-                    password_hash=hash_password("demo12345"), rol=RolUsuario.ADMIN,
-                )
-            )
-            print(f"Usuario demo creado (id={demo_user.id})")
+        empresa_repo = SqlAlchemyEmpresaRepository(db)
+        if empresa_repo.get().nombre_comercial == Empresa().nombre_comercial:
+            empresa_repo.save(Empresa(
+                nombre_comercial="Ferretería Demo", razon_social="Ferretería Demo S.A.", ruc="80000000-0",
+                direccion="Av. Principal 123", ciudad="Asunción", telefono="021 000 000",
+            ))
+
+        for email, nombre, rol in USUARIOS_DEMO:
+            if usuarios.get_by_email(email) is None:
+                usuarios.add(Usuario(id=None, name=nombre, email=email, password_hash=hash_password(DEMO_PASSWORD), rol=rol))
+                print(f"Usuario demo {email} ({rol.value}) creado — contraseña: {DEMO_PASSWORD}")
+        demo_user = usuarios.get_by_email(USUARIOS_DEMO[0][0])
 
         if not categorias_repo.list():
             cat_ferreteria = categorias.crear("Ferretería general", "Herramientas e insumos de ferretería", 1)
@@ -98,7 +122,10 @@ def main() -> None:
                 productos.crear("Tornillos autorroscantes 1\" (caja 100)", None, cat_ferreteria.id, 15000, None, 8, "caja"),
                 productos.crear("Llave de paso 1/2\"", "Bronce", cat_plomeria.id, 28000, None, 6, "pz"),
             ]
-            print(f"{len(productos_creados)} productos creados")
+            inventario = InventarioService(productos_repo, SqlAlchemyMovimientoInventarioRepository(db))
+            for p in productos_creados:
+                inventario.ajustar_stock(p.id, p.stock_minimo * 3, "Inventario inicial (demo)", demo_user.id)
+            print(f"{len(productos_creados)} productos creados con stock inicial")
         else:
             productos_creados = productos_repo.list()
 

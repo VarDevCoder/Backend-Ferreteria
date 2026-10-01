@@ -2,7 +2,7 @@
 from decimal import Decimal
 
 from app.domain.entities import Categoria, Producto
-from app.domain.exceptions import RecursoNoEncontrado
+from app.domain.exceptions import ConflictoDeUnicidad, RecursoNoEncontrado
 from app.domain.repositories import CategoriaRepository, ProductoRepository
 
 MARGEN_VENTA_PORCENTAJE = Decimal("25")
@@ -39,8 +39,11 @@ class CategoriaService:
 
 
 class ProductoService:
-    def __init__(self, productos: ProductoRepository):
+    def __init__(self, productos: ProductoRepository, margen_defecto: int | Decimal = MARGEN_VENTA_PORCENTAJE):
         self._productos = productos
+        # Margen que se aplica cuando se crea un producto sin precio de venta
+        # (configurable por empresa).
+        self._margen_defecto = Decimal(margen_defecto)
 
     def listar(
         self, solo_activos: bool = False, categoria_id: int | None = None, busqueda: str | None = None
@@ -64,8 +67,11 @@ class ProductoService:
         unidad_medida: str,
         codigo: str | None = None,
     ) -> Producto:
+        codigo = codigo.strip() if codigo else None
+        if codigo and self._productos.get_by_codigo(codigo) is not None:
+            raise ConflictoDeUnicidad(f"Ya existe un producto con el código {codigo}")
         if precio_venta is None or precio_venta == 0:
-            precio_venta = int(round(precio_compra * (1 + MARGEN_VENTA_PORCENTAJE / 100)))
+            precio_venta = int(round(precio_compra * (1 + self._margen_defecto / 100)))
 
         producto = Producto(
             id=None,

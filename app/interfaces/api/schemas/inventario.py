@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from .catalogo import ProductoResponse
 
@@ -28,4 +28,10 @@ class MovimientoInventarioResponse(BaseModel):
         )
 
 
-__all__ = ["MovimientoInventarioResponse", "ProductoResponse"]
+class AjusteStockInput(BaseModel):
+    producto_id: int
+    stock_nuevo: float = Field(ge=0, description="Stock real contado; el sistema calcula la diferencia")
+    motivo: str = Field(min_length=1, max_length=500, description="Ej. inventario inicial, conteo físico, rotura")
+
+
+__all__ = ["AjusteStockInput", "MovimientoInventarioResponse", "ProductoResponse"]

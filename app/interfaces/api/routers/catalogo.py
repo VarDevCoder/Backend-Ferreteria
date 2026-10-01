@@ -60,7 +60,7 @@ def obtener_producto(producto_id: int, servicio: ProductoSvc) -> ProductoRespons
 def crear_producto(datos: ProductoCreate, servicio: ProductoSvc, _usuario: RequireAnkorUser) -> ProductoResponse:
     producto = servicio.crear(
         datos.nombre, datos.descripcion, datos.categoria_id, datos.precio_compra, datos.precio_venta,
-        datos.stock_minimo, datos.unidad_medida,
+        datos.stock_minimo, datos.unidad_medida, codigo=datos.codigo,
     )
     return ProductoResponse.desde_entidad(producto)
 

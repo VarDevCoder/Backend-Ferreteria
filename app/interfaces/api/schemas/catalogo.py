@@ -20,6 +20,8 @@ class CategoriaResponse(BaseModel):
 
 
 class ProductoCreate(BaseModel):
+    # Código interno o de barras. Vacío = se genera automáticamente.
+    codigo: str | None = Field(default=None, max_length=50)
     nombre: str = Field(min_length=1, max_length=255)
     descripcion: str | None = None
     categoria_id: int | None = None
