@@ -1,0 +1,8 @@
+# Fuera del paquete de la función: no se usan en producción.
+# (alembic.ini y alembic/ SÍ se incluyen: las migraciones corren al arrancar.)
+tests/
+docs/
+.env
+.env.*
+.venv/
+__pycache__/
