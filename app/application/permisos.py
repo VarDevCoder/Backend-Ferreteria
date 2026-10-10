@@ -63,6 +63,16 @@ def puede_cambiar_precio_de_venta(rol: RolUsuario) -> bool:
     return rol in PUEDEN_CAMBIAR_PRECIO_DE_VENTA
 
 
+# Descuento máximo (%) por venta o pedido para quien no puede cambiar
+# precios (vendedor, depósito). Admin y encargado no tienen tope.
+# DECISIÓN A CONFIRMAR CON EL DUEÑO: 10 % es un valor conservador.
+DESCUENTO_MAXIMO_SIN_PERMISO = 10
+
+
+def descuento_maximo(rol: RolUsuario) -> int:
+    return 100 if puede_cambiar_precio_de_venta(rol) else DESCUENTO_MAXIMO_SIN_PERMISO
+
+
 # Quién decide cuánto puede deber un cliente (el límite de su cuenta corriente).
 PUEDEN_ASIGNAR_CREDITO = frozenset({A, E})
 

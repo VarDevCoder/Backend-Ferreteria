@@ -26,6 +26,13 @@ from app.domain.repositories import (
 )
 
 
+def validar_descuento(descuento: int, maximo: int) -> None:
+    if descuento > maximo:
+        raise PermisoDenegado(
+            f"Tu rol puede descontar hasta {maximo} %. Para un descuento mayor pedíselo a un encargado"
+        )
+
+
 class CajaService:
     def __init__(
         self,
@@ -104,6 +111,7 @@ class CajaService:
         notas: str | None = None,
         puede_cambiar_precios: bool = False,
         pagos: list[dict] | None = None,
+        descuento_maximo: int = 100,
     ) -> VentaMostrador:
         """Registra una venta de mostrador.
 
@@ -117,6 +125,7 @@ class CajaService:
             raise TransicionDeEstadoInvalida("No hay un turno de caja abierto. Abrí caja antes de vender.")
         if not items:
             raise SolicitudInvalida("La venta debe tener al menos un ítem")
+        validar_descuento(descuento, descuento_maximo)
 
         venta_items = []
         # Cantidad total pedida por producto: si un producto aparece en

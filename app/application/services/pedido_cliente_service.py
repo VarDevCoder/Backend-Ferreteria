@@ -5,7 +5,8 @@ from decimal import Decimal
 
 from app.domain.entities import PedidoCliente, PedidoClienteItem, SolicitudPresupuesto, SolicitudPresupuestoItem
 from app.domain.enums import EstadoPedidoCliente, EstadoSolicitudPresupuesto
-from app.domain.exceptions import RecursoNoEncontrado, SolicitudInvalida, TransicionDeEstadoInvalida
+from app.application.services.caja_service import validar_descuento
+from app.domain.exceptions import PermisoDenegado, RecursoNoEncontrado, SolicitudInvalida, TransicionDeEstadoInvalida
 from app.domain.repositories import (
     ClienteRepository,
     PedidoClienteRepository,
@@ -53,7 +54,12 @@ class PedidoClienteService:
         fecha_entrega_solicitada: date | None = None,
         descuento: int = 0,
         notas: str | None = None,
+        puede_cambiar_precios: bool = True,
+        descuento_maximo: int = 100,
     ) -> PedidoCliente:
+        validar_descuento(descuento, descuento_maximo)
+        if not puede_cambiar_precios:
+            self._validar_precios(items)
         # Si se eligió un cliente del catálogo, tomamos su snapshot actual (igual que Laravel)
         if cliente_id is not None:
             cliente = self._clientes.get_by_id(cliente_id)
@@ -103,10 +109,17 @@ class PedidoClienteService:
         fecha_entrega_solicitada: date | None,
         descuento: int,
         notas: str | None,
+        puede_cambiar_precios: bool = True,
+        descuento_maximo: int = 100,
     ) -> PedidoCliente:
         pedido = self.obtener(pedido_id)
         if not pedido.puede_ser_editado():
             raise TransicionDeEstadoInvalida("Esta solicitud no puede ser modificada")
+        if descuento != pedido.descuento:
+            validar_descuento(descuento, descuento_maximo)
+        if not puede_cambiar_precios:
+            # Se puede mantener el precio ya pactado en el pedido (lo fijó un encargado).
+            self._validar_precios(items, ya_pactados={i.producto_id: i.precio_unitario for i in pedido.items})
 
         pedido.cliente_id = cliente_id
         pedido.cliente_nombre = cliente_nombre
@@ -128,6 +141,20 @@ class PedidoClienteService:
 
         self._pedidos.replace_items(pedido_id, pedido.items)
         return self._pedidos.update(pedido)
+
+    def _validar_precios(self, items: list[dict], ya_pactados: dict[int, int] | None = None) -> None:
+        """Sin permiso de precios, cada línea va al precio de lista (misma regla que la caja)."""
+        ya_pactados = ya_pactados or {}
+        for i in items:
+            producto = self._productos.get_by_id(i["producto_id"])
+            if producto is None:
+                raise RecursoNoEncontrado("Producto", i["producto_id"])
+            precio = int(i["precio_unitario"])
+            if precio != producto.precio_venta and precio != ya_pactados.get(producto.id):
+                raise PermisoDenegado(
+                    f"Tu rol no puede cambiar el precio de {producto.nombre} "
+                    f"(precio de lista: {producto.precio_venta}). Pedíselo a un encargado o usá el descuento"
+                )
 
     def eliminar(self, pedido_id: int) -> None:
         pedido = self.obtener(pedido_id)

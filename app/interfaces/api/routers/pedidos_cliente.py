@@ -3,6 +3,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends
 
+from app.application.permisos import descuento_maximo, puede_cambiar_precio_de_venta
 from app.application.services.catalogo_service import ProductoService
 from app.application.services.contactos_service import ProveedorProductoService, ProveedorService
 from app.application.services.pedido_cliente_service import PedidoClienteService
@@ -48,13 +49,19 @@ def obtener_pedido(pedido_id: int, servicio: PedidoSvc) -> PedidoClienteResponse
 
 @router.post("", response_model=PedidoClienteResponse, status_code=201)
 def crear_pedido(datos: PedidoClienteCreate, servicio: PedidoSvc, usuario: RequireSailUser) -> PedidoClienteResponse:
-    pedido = servicio.crear(usuario_id=usuario.id, items=[i.model_dump() for i in datos.items], **datos.model_dump(exclude={"items"}))
+    pedido = servicio.crear(
+        usuario_id=usuario.id, items=[i.model_dump() for i in datos.items], **datos.model_dump(exclude={"items"}),
+        puede_cambiar_precios=puede_cambiar_precio_de_venta(usuario.rol), descuento_maximo=descuento_maximo(usuario.rol),
+    )
     return PedidoClienteResponse.desde_entidad(pedido)
 
 
 @router.put("/{pedido_id}", response_model=PedidoClienteResponse)
-def actualizar_pedido(pedido_id: int, datos: PedidoClienteUpdate, servicio: PedidoSvc, _usuario: RequireSailUser) -> PedidoClienteResponse:
-    pedido = servicio.actualizar(pedido_id, items=[i.model_dump() for i in datos.items], **datos.model_dump(exclude={"items"}))
+def actualizar_pedido(pedido_id: int, datos: PedidoClienteUpdate, servicio: PedidoSvc, usuario: RequireSailUser) -> PedidoClienteResponse:
+    pedido = servicio.actualizar(
+        pedido_id, items=[i.model_dump() for i in datos.items], **datos.model_dump(exclude={"items"}),
+        puede_cambiar_precios=puede_cambiar_precio_de_venta(usuario.rol), descuento_maximo=descuento_maximo(usuario.rol),
+    )
     return PedidoClienteResponse.desde_entidad(pedido)
 
 

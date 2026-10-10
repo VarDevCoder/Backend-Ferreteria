@@ -2,7 +2,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
-from app.application.permisos import modulos_modificables
+from app.application.permisos import descuento_maximo, modulos_modificables
 from app.domain.enums import RolUsuario
 
 _ROLES_INTERNOS = "admin | encargado | vendedor | deposito"
@@ -35,10 +35,15 @@ class SesionUsuarioResponse(UsuarioResponse):
     # Módulos que el rol puede modificar: el frontend los usa para ocultar
     # acciones no permitidas (la validación real la hace el backend).
     permisos: list[str]
+    # Descuento máximo (%) que puede aplicar en una venta o pedido.
+    descuento_maximo: int = 100
 
     @classmethod
     def desde_entidad(cls, u) -> "SesionUsuarioResponse":
-        return cls(**UsuarioResponse.desde_entidad(u).model_dump(), permisos=modulos_modificables(u.rol))
+        return cls(
+            **UsuarioResponse.desde_entidad(u).model_dump(),
+            permisos=modulos_modificables(u.rol), descuento_maximo=descuento_maximo(u.rol),
+        )
 
 
 class TokenResponse(BaseModel):
