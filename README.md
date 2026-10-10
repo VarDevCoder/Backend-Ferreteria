@@ -101,6 +101,8 @@ Todos bajo el prefijo `/api/v1` (salvo el chequeo de salud `GET /`).
 | Órdenes de compra | `/ordenes-compra` — `enviar`, `confirmar`, `en-transito`, `recibir` (ingresa stock), `cancelar` |
 | Órdenes de envío | `/ordenes-envio` — `lista-despachar`, `despachar` (descuenta stock), `entregar`, `devolver`, `cancelar` |
 | Inventario | `/inventario/stock`, `/inventario/movimientos`, `/inventario/kardex/{producto_id}`, `POST /inventario/ajustes` (inventario inicial / conteo físico) |
+| Stock no vendible | `/stock-no-vendible` (marcar averiado, abollado, vencido...) — `reparar`, `descartar`. Contrato: [`docs/api/stock-no-vendible.md`](docs/api/stock-no-vendible.md) |
+| Reclamos al proveedor | `/reclamos-proveedor` — `enviar`, `aceptar`, `rechazar`, `items/{id}/resolver` (reposición, nota de crédito o rechazado), `documentos`, `documento` (para imprimir) |
 
 El detalle de cada ruta, con sus schemas, está en `/docs` (Swagger) y `/redoc`.
 
@@ -159,7 +161,8 @@ espera pg8000. Usar el host con `-pooler` para la app.
   **unas 6 semanas de operación**: turnos de caja diarios con arqueo, ~350 ventas de mostrador con
   efectivo, débito, crédito, transferencia, QR y pagos mixtos, clientes con cuenta corriente
   (deudas al día y atrasadas), kardex coherente, algunos productos bajo el mínimo, la caja de hoy
-  abierta con ventas y pedidos en distintas etapas (recibido, listo para envío, entregado).
+  abierta con ventas, pedidos en distintas etapas (recibido, listo para envío, entregado) y unidades
+  no vendibles (averiadas, abolladas, vencidas, con defecto de fábrica) con un reclamo enviado a un proveedor.
   Ver `app/infrastructure/db/demo_historial.py`. Solo inserta lo que falta, así que se puede correr
   varias veces. **No usar en la base de una empresa real**: los usuarios demo tienen contraseña conocida.
   En Vercel, `SEED_DEMO=true` en las variables de entorno lo aplica al arrancar.
