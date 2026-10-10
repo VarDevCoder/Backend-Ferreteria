@@ -26,7 +26,7 @@ if os.environ.get("SEED_DEMO", "false").lower() == "true":
     import seed  # noqa: E402
 
     try:
-        seed.main()
+        seed.main(migrar=False)  # las migraciones ya corrieron arriba (o se manejan a mano)
     except Exception:  # la demo no debe dejar la API caída por un dato de ejemplo
         import logging
 

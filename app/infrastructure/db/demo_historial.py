@@ -239,11 +239,12 @@ def generar_historial(db: Session, usuario_id: int, vendedor_id: int | None = No
 
 # --- Medios de pago y cuenta corriente --------------------------------------------
 
-# (nombre del cliente, límite de crédito). Los que no estén en la base se ignoran.
+# (nombre del cliente, límite de crédito, probabilidad de que pague cada compra).
+# Los que no estén en la base se ignoran. Juan paga poco: deja deuda atrasada.
 CLIENTES_CON_CREDITO = [
-    ("Constructora Mbaretê S.R.L.", 8_000_000),
-    ("Electricista Ramón Ortiz", 2_500_000),
-    ("Juan Benítez", 1_500_000),
+    ("Constructora Mbaretê S.R.L.", 8_000_000, 0.8),
+    ("Electricista Ramón Ortiz", 2_500_000, 0.7),
+    ("Juan Benítez", 1_500_000, 0.15),
 ]
 
 
@@ -288,7 +289,8 @@ def completar_medios_de_pago(db: Session, usuario_id: int, semilla: int = 2026) 
             _cambiar_pagos(venta, turnos[venta.caja_turno_id], [(rng.choice(["TARJETA_DEBITO"] * 3 + ["TARJETA_CREDITO"] * 2), venta.total)])
 
     # 2) Clientes con crédito.
-    nombres = dict(CLIENTES_CON_CREDITO)
+    nombres = {nombre: limite for nombre, limite, _ in CLIENTES_CON_CREDITO}
+    paga = {nombre: probabilidad for nombre, _, probabilidad in CLIENTES_CON_CREDITO}
     clientes = [c for c in db.execute(select(ClienteModel).where(ClienteModel.nombre.in_(nombres))).scalars()]
     for c in clientes:
         c.limite_credito = nombres[c.nombre]
@@ -298,8 +300,10 @@ def completar_medios_de_pago(db: Session, usuario_id: int, semilla: int = 2026) 
     cobros: list[tuple[datetime, ClienteModel, int]] = []
     creadas = 0
     candidatas = [v for v in ventas if 80_000 <= v.total <= 2_500_000]
+    # Más compras a cuenta en los primeros días, así hay deudas de más de 30 días.
+    primeros_dias = candidatas[0].created_at + timedelta(days=10) if candidatas else ahora
     for venta in candidatas:
-        if not clientes or rng.random() > 0.12:
+        if not clientes or rng.random() > (0.3 if venta.created_at < primeros_dias else 0.1):
             continue
         # Cobros ya ocurridos antes de esta venta.
         for fecha, cliente, monto in [c for c in cobros if c[0] <= venta.created_at]:
@@ -326,7 +330,7 @@ def completar_medios_de_pago(db: Session, usuario_id: int, semilla: int = 2026) 
         creadas += 1
         # La mayoría paga a las 1-3 semanas; algunos dejan la deuda.
         fecha_cobro = venta.created_at + timedelta(days=rng.randint(7, 21), hours=rng.randint(0, 5))
-        if rng.random() < 0.65 and fecha_cobro < ahora:
+        if rng.random() < paga[cliente.nombre] and fecha_cobro < ahora:
             parte = a_cuenta if rng.random() < 0.7 else (a_cuenta // 2 // 1000) * 1000
             cobros.append((fecha_cobro, cliente, parte))
     for fecha, cliente, monto in cobros:

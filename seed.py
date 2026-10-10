@@ -18,6 +18,8 @@ from __future__ import annotations
 import sys
 from datetime import date
 
+from sqlalchemy import text
+
 from app.application.services.catalogo_service import CategoriaService, ProductoService
 from app.application.services.contactos_service import ClienteService, ProveedorProductoService, ProveedorService
 from app.application.services.orden_compra_service import OrdenCompraService
@@ -28,6 +30,7 @@ from app.core.config import get_settings
 from app.domain.entities import Empresa, Usuario
 from app.domain.enums import RolUsuario
 from app.infrastructure.db.models import Base
+from app.infrastructure.db.migraciones import aplicar_migraciones
 from app.infrastructure.db.repositories.catalogo_repository import SqlAlchemyCategoriaRepository, SqlAlchemyProductoRepository
 from app.infrastructure.db.repositories.contactos_repository import (
     SqlAlchemyClienteRepository,
@@ -90,7 +93,7 @@ CLIENTES_EXTRA = [
 ]
 
 
-def main() -> None:
+def main(migrar: bool = True) -> None:
     if not ("--demo" in sys.argv or get_settings().seed_demo):
         print("SEED_DEMO no está activo: no se cargan datos de ejemplo.")
         return
@@ -98,7 +101,12 @@ def main() -> None:
     if "--reset" in sys.argv:
         print("Recreando el esquema completo...")
         Base.metadata.drop_all(engine)
-    Base.metadata.create_all(engine)
+        with engine.begin() as conexion:
+            conexion.execute(text("DROP TABLE IF EXISTS alembic_version"))
+    # El esquema lo arman las migraciones (no `create_all`, que crearía las
+    # tablas nuevas pero no las columnas nuevas de las tablas existentes).
+    if migrar:
+        aplicar_migraciones()
 
     db = SessionLocal()
     try:
