@@ -195,6 +195,12 @@ FRONTEND_DIR=../Frontend-Ferreteria uvicorn app.main:app --port 8000   # abrir h
 
 ## Despliegue en Vercel
 
+> **Clientes nuevos en la nube** (una instancia por cliente, servidor único): paso a paso en
+> [`docs/ALTA-CLIENTE-NUBE.md`](docs/ALTA-CLIENTE-NUBE.md), con la ayuda de
+> `herramientas/alta_cliente.py` (genera `SECRET_KEY` y las variables, prueba la base, migra y
+> verifica la instancia). `vercel.json` corre `herramientas/vercel_build.sh`: con `FRONTEND_DIR`
+> baja el frontend para servirlo desde el mismo proyecto; sin esa variable (como la demo) no hace nada.
+
 Proyecto `ankor-backend` (nombre de antes de SAIL) en la cuenta `vardevcoder`. La app corre como una función
 serverless de Python:
 

@@ -23,6 +23,10 @@ def engine_args(database_url: str) -> tuple[URL, dict[str, Any]]:
     Neon falla con `'str' object has no attribute 'wrap_socket'`.
     """
     url = make_url(database_url)
+    # La cadena tal como la copia Neon (postgresql://...) también sirve: el
+    # driver del proyecto es pg8000 (Python puro), no psycopg2.
+    if url.drivername in ("postgresql", "postgres"):
+        url = url.set(drivername="postgresql+pg8000")
     connect_args: dict[str, Any] = {}
     flag = next((url.query[p] for p in _SSL_PARAMS if p in url.query), None)
     url = url.difference_update_query(_SSL_PARAMS + _PARAMS_IGNORADOS)

@@ -1,7 +1,8 @@
 {
+  "buildCommand": "sh herramientas/vercel_build.sh",
   "functions": {
     "api/index.py": {
-      "includeFiles": "{alembic.ini,alembic/**}",
+      "includeFiles": "{alembic.ini,alembic/**,frontend/**}",
       "maxDuration": 60
     }
   },
