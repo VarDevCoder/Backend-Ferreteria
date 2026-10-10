@@ -147,6 +147,8 @@ $b = New-Object byte[] 48; [Security.Cryptography.RandomNumberGenerator]::Create
    - **Project Name**: `sail-<cliente>` (el mismo que en Neon). Esto define la dirección:
      `https://sail-<cliente>.vercel.app`.
    - **Framework Preset**: **Other**. **Root Directory**: `./` (no tocar).
+   - **Build and Output Settings** → activá **Build Command** (Override) y escribí
+     `sh herramientas/vercel_build.sh`. Es el paso que baja las pantallas de SAIL a este proyecto.
    - *Build and Output Settings*: **no tocar** (el repo ya trae `vercel.json` con el build).
    - Desplegá **Environment Variables**, hacé clic en el primer casillero **Key** y **pegá el
      bloque entero** del paso 2: Vercel lo separa en filas solo. Reemplazá `DATABASE_URL` por la
@@ -157,10 +159,10 @@ $b = New-Object byte[] 48; [Security.Cryptography.RandomNumberGenerator]::Create
    (gru1)** (cerca de la base) → **Save**. Después **Deployments** → en el último, menú **⋯** →
    **Redeploy** para que tome la región.
 
-> Detalle técnico: `vercel.json` corre `herramientas/vercel_build.sh`, que con `FRONTEND_DIR`
+> Detalle técnico: el Build Command del proyecto corre `herramientas/vercel_build.sh`, que con `FRONTEND_DIR`
 > baja el frontend (`api.github.com/repos/VarDevCoder/Frontend-Ferreteria/tarball/main`) a
-> `frontend/` y lo incluye en la función (`includeFiles`). Sin `FRONTEND_DIR` no hace nada (así
-> sigue `ankor-backend`). El primer arranque aplica las migraciones (`api/index.py`).
+> `frontend/` y lo incluye en la función (`includeFiles`). Va en la configuración de cada proyecto de
+> cliente y no en `vercel.json`, para no cambiar cómo se publica la demo `ankor-backend`. El primer arranque aplica las migraciones (`api/index.py`).
 
 ---
 
@@ -330,7 +332,7 @@ Una fila por cliente, **sin contraseñas ni cadenas de conexión**:
 | Qué pasa | Por qué | Qué hacer |
 |---|---|---|
 | El build falla con `no se pudo bajar el frontend` | El repo del frontend es privado y falta `FRONTEND_TOKEN`, o el token venció | Revisar la variable (preparación 3) y **Redeploy** |
-| `/` muestra `{"status":"ok"...}` en vez de la pantalla | Falta `FRONTEND_DIR=frontend` | Agregarla en *Settings* → *Environment Variables* y **Redeploy** |
+| `/` muestra `{"status":"ok"...}` en vez de la pantalla | Falta `FRONTEND_DIR=frontend` o el Build Command | Agregar la variable en *Settings* → *Environment Variables* y el Build Command `sh herramientas/vercel_build.sh` en *Settings* → *Build and Deployment*; después **Redeploy** |
 | Error 500 `FUNCTION_INVOCATION_FAILED` | La app no arrancó | Vercel → *Logs*: si dice `FRONTEND_DIR=... no tiene index.html`, el build no bajó el frontend; si dice algo de conexión, revisar `DATABASE_URL` |
 | La primera carga tarda | Neon "duerme" la base cuando no se usa y la despierta al primer pedido; o se están creando las tablas | Esperar; en planes pagos se puede desactivar la suspensión |
 | `verificar` dice que la demo está activa | `SEED_DEMO=true` o falta | Poner `SEED_DEMO=false` y **Redeploy**. Si alguien ya entró con usuarios demo, borrarlos o rehacer la base |

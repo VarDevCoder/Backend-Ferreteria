@@ -208,8 +208,9 @@ copia diaria con `pg_dump`. Se construye **y se prueba** en GitHub Actions (*Act
 > **Clientes nuevos en la nube** (una instancia por cliente, servidor único): paso a paso en
 > [`docs/ALTA-CLIENTE-NUBE.md`](docs/ALTA-CLIENTE-NUBE.md), con la ayuda de
 > `herramientas/alta_cliente.py` (genera `SECRET_KEY` y las variables, prueba la base, migra y
-> verifica la instancia). `vercel.json` corre `herramientas/vercel_build.sh`: con `FRONTEND_DIR`
-> baja el frontend para servirlo desde el mismo proyecto; sin esa variable (como la demo) no hace nada.
+> verifica la instancia). En cada proyecto de cliente, el Build Command de Vercel es
+> `sh herramientas/vercel_build.sh`: con `FRONTEND_DIR` baja el frontend para servirlo desde el
+> mismo proyecto. La demo `ankor-backend` no lo usa (`vercel.json` no define build).
 
 Proyecto `ankor-backend` (nombre de antes de SAIL) en la cuenta `vardevcoder`. La app corre como una función
 serverless de Python:
