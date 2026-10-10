@@ -143,13 +143,22 @@ log_rotation_size = 0
         Ejecutar icacls.exe @($dirBase, '/remove', "*$yo") | Out-Null
     }
 
-    # El servicio apunta a los binarios de esta versión: se vuelve a registrar siempre.
-    if (Existe-Servicio $SAIL_SERVICIO_PG) {
+    # Al actualizar, el servicio ya apunta a esta carpeta (los binarios se reemplazaron en
+    # el lugar): se deja como está. Solo se vuelve a registrar si apunta a otro lado.
+    $pgctl = Join-Path $bin 'pg_ctl.exe'
+    $actual = Get-CimInstance Win32_Service -Filter "Name='$SAIL_SERVICIO_PG'" -ErrorAction SilentlyContinue
+    if ($actual -and ($actual.PathName -notlike "*$pgctl*")) {
+        Log "El servicio de la base apuntaba a otra carpeta ($($actual.PathName)): se vuelve a registrar."
         Stop-Service -Name $SAIL_SERVICIO_PG -Force -ErrorAction SilentlyContinue
-        Ejecutar (Join-Path $bin 'pg_ctl.exe') @('unregister', '-N', $SAIL_SERVICIO_PG) -PermitirError | Out-Null
-        Start-Sleep -Seconds 2
+        Ejecutar sc.exe @('delete', $SAIL_SERVICIO_PG) -PermitirError | Out-Null
+        Esperar-SinServicio $SAIL_SERVICIO_PG
+        $actual = $null
     }
-    Ejecutar (Join-Path $bin 'pg_ctl.exe') @('register', '-N', $SAIL_SERVICIO_PG, '-U', $CUENTA_SERVICIO, '-D', $dirBase, '-S', 'auto') | Out-Null
+    if (-not $actual) {
+        Ejecutar $pgctl @('register', '-N', $SAIL_SERVICIO_PG, '-U', $CUENTA_SERVICIO, '-D', $dirBase, '-S', 'auto') | Out-Null
+    } else {
+        Log 'Servicio de la base existente: se conserva.'
+    }
     Ejecutar sc.exe @('description', $SAIL_SERVICIO_PG, 'Base de datos de SAIL (PostgreSQL)') | Out-Null
     Ejecutar sc.exe @('failure', $SAIL_SERVICIO_PG, 'reset=', '3600', 'actions=', 'restart/10000/restart/30000/restart/60000') | Out-Null
     Start-Service -Name $SAIL_SERVICIO_PG
@@ -210,7 +219,7 @@ function Instalar-ServicioSail([hashtable]$Config) {
         Log "El servicio SAIL apuntaba a otra carpeta ($($actual.PathName)): se vuelve a registrar."
         Stop-Service -Name $SAIL_SERVICIO -Force -ErrorAction SilentlyContinue
         Ejecutar sc.exe @('delete', $SAIL_SERVICIO) -PermitirError | Out-Null
-        Start-Sleep -Seconds 2
+        Esperar-SinServicio $SAIL_SERVICIO
         $actual = $null
     }
     if (-not $actual) {

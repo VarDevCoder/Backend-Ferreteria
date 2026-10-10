@@ -143,7 +143,7 @@ Set-Content -Path (Join-Path $staging 'VERSION.txt') -Encoding ASCII -Value @(
 # ---------------------------------------------------------------- compilar y probar el Python embebido
 Paso 'Precompilar Python y probar que importa todo'
 $py = Join-Path $dirPython 'python.exe'
-Correr $py @('-m', 'compileall', '-q', '-j', '0', '--invalidation-mode', 'unchecked-hash', $dirBackend, $sitePackages)
+Correr $py @('-m', 'compileall', '-q', '--invalidation-mode', 'unchecked-hash', $dirBackend, $sitePackages)
 $env:FRONTEND_DIR = $dirFrontend
 $env:DATABASE_URL = 'postgresql+pg8000://sail:x@127.0.0.1:7246/sail'
 Correr $py @('-c', 'import app.main, servir, uvicorn, alembic, pg8000, httptools; print(''importa todo OK'')')

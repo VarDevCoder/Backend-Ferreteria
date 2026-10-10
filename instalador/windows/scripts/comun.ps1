@@ -84,6 +84,16 @@ function Existe-Servicio([string]$Nombre) {
     return [bool](Get-Service -Name $Nombre -ErrorAction SilentlyContinue)
 }
 
+# Windows borra un servicio recién cuando nadie lo tiene abierto: esperar antes de recrearlo.
+function Esperar-SinServicio([string]$Nombre, [int]$Segundos = 60) {
+    $limite = (Get-Date).AddSeconds($Segundos)
+    while ((Get-Date) -lt $limite) {
+        if (-not (Existe-Servicio $Nombre)) { return }
+        Start-Sleep -Seconds 1
+    }
+    throw "Windows no terminó de quitar el servicio $Nombre (cerrá la ventana Servicios y volvé a intentar)"
+}
+
 function Esperar-Postgres([string]$Bin, [string]$Puerto, [int]$Segundos = 90) {
     $limite = (Get-Date).AddSeconds($Segundos)
     $anterior = $ErrorActionPreference
