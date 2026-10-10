@@ -37,6 +37,11 @@ from app.infrastructure.db.models import (
     MovimientoCajaModel,
     MovimientoCuentaCorrienteModel,
     MovimientoInventarioModel,
+    OrdenEnvioItemModel,
+    OrdenEnvioModel,
+    PedidoClienteItemModel,
+    PedidoClienteModel,
+    PedidoPagoModel,
     ProductoModel,
     ProveedorModel,
     ReclamoProveedorItemModel,
@@ -48,6 +53,8 @@ from app.infrastructure.db.models import (
     VentaMostradorModel,
     VentaPagoModel,
 )
+from app.core.tiempo import hoy as hoy_local
+from app.infrastructure.db.repositories.flujo_repository import siguiente_numero
 from app.infrastructure.db.repositories.stock_no_vendible_repository import SqlAlchemyReclamoProveedorRepository
 
 DIAS_DE_HISTORIAL = 42
@@ -492,3 +499,180 @@ def cargar_stock_no_vendible(db: Session, usuario_id: int) -> int:
     for producto, *_ in casos:
         db.expire(producto)
     return len(casos)
+
+
+# --- Logística y cobro de pedidos ----------------------------------------------------
+
+MARCA_LOGISTICA = "(demo logística)"
+# (cliente, [(producto, cantidad)], modalidad, forma de pago, etapa, pagos [(tipo, medio, monto o None = saldo)], nota)
+# etapa: RECIBIDO (sin envío), LISTO (envío listo para despachar o para retirar) o ENTREGADO.
+CASOS_LOGISTICA = [
+    ("Juan Benítez", [("Amoladora angular 4 1/2\" 850W", 1), ("Disco de corte 4 1/2\"", 5)],
+     "RETIRA_CLIENTE", "ANTICIPADO", "LISTO", [("ANTICIPO", "TRANSFERENCIA", None)], "Pagado a retirar"),
+    ("Electricista Ramón Ortiz", [("Cable eléctrico 2.5mm (rollo 100m)", 2), ("Llave térmica 20A", 4)],
+     "ENTREGA_DOMICILIO", "ANTICIPADO", "LISTO", [("ANTICIPO", "QR", None)], "Pagado a entregar"),
+    ("Construcciones Ybytu S.A.", [("Cemento portland 50kg", 20)],
+     "ENTREGA_DOMICILIO", "CONTRA_ENTREGA", "RECIBIDO", [("ANTICIPO", "EFECTIVO", 300_000)], "Contra entrega con seña"),
+    ("Constructora Mbaretê S.R.L.", [("Caño PVC 1/2\" (barra 6m)", 15), ("Codo PVC 1/2\"", 30)],
+     "ENTREGA_DOMICILIO", "CUENTA_CORRIENTE", "ENTREGADO", [("CARGO_CUENTA", "CUENTA_CORRIENTE", None)], "Entregado a cuenta"),
+    ("Ferretería El Tornillo Feliz", [("Pintura látex exterior 4L", 3), ("Rodillo antigota 23cm", 3)],
+     "ENTREGA_DOMICILIO", "CONTRA_ENTREGA", "ENTREGADO", [], "Contra entrega, por rendir"),
+]
+TRASLADO_DEMO = {
+    "metodo_envio": "Camión propio", "transportista": "Reparto propio", "vehiculo": "Kia K2500 — chapa ABC 123",
+    "conductor_nombre": "Carlos Duarte", "conductor_documento": "3.456.789",
+}
+
+
+def cargar_logistica(db: Session, vendedor_id: int, deposito_id: int) -> int:
+    """Pedidos de ejemplo con cada forma de entrega y de cobro: pagado a
+    retirar, pagado a entregar, contra entrega con seña, entregado a cuenta
+    (con su cargo en la cuenta corriente) y contra entrega por rendir. Corre una
+    sola vez (busca la marca en las notas) y usa pocas consultas: cada tabla se
+    inserta en lote y el stock se actualiza con un solo UPDATE. Las entregas
+    descuentan stock con su salida en el kardex, después de todo el historial.
+    Devuelve cuántos pedidos creó."""
+    if db.execute(
+        select(func.count()).select_from(PedidoClienteModel).where(PedidoClienteModel.notas.like(f"%{MARCA_LOGISTICA}%"))
+    ).scalar_one():
+        return 0
+    nombres_clientes = [c[0] for c in CASOS_LOGISTICA]
+    clientes = {c.nombre: c for c in db.execute(select(ClienteModel).where(ClienteModel.nombre.in_(nombres_clientes))).scalars()}
+    nombres_productos = {n for caso in CASOS_LOGISTICA for n, _ in caso[1]}
+    productos = {
+        p.nombre: p
+        for p in db.execute(select(ProductoModel).where(ProductoModel.nombre.in_(nombres_productos)).with_for_update()).scalars()
+    }
+    turno = db.execute(select(CajaTurnoModel).where(CajaTurnoModel.estado == "ABIERTO")).scalars().first()
+    saldos: dict[int, int] = {}
+    for cliente_id, tipo, monto in db.execute(
+        select(MovimientoCuentaCorrienteModel.cliente_id, MovimientoCuentaCorrienteModel.tipo, func.sum(MovimientoCuentaCorrienteModel.monto))
+        .group_by(MovimientoCuentaCorrienteModel.cliente_id, MovimientoCuentaCorrienteModel.tipo)
+    ).all():
+        saldos[cliente_id] = saldos.get(cliente_id, 0) + (int(monto) if tipo == "CARGO" else -int(monto))
+    originales = {p.id: Decimal(p.stock_actual) for p in productos.values()}
+    stock = dict(originales)
+    hoy = hoy_local()
+
+    # 1) Elegir los casos que se pueden armar con el stock y el crédito de esta base.
+    casos = []
+    for cliente_nombre, lineas, modalidad, forma, etapa, pagos, nota in CASOS_LOGISTICA:
+        cliente = clientes.get(cliente_nombre)
+        items = [(productos[n], Decimal(c)) for n, c in lineas if n in productos]
+        if cliente is None or not items:
+            continue
+        if etapa == "ENTREGADO" and any(stock[p.id] < c for p, c in items):
+            continue
+        total = sum(int(p.precio_venta) * int(c) for p, c in items)
+        if forma == "CUENTA_CORRIENTE" and saldos.get(cliente.id, 0) + total > (cliente.limite_credito or 0):
+            continue
+        if any(medio == "EFECTIVO" for _, medio, _ in pagos) and turno is None:
+            pagos = []  # sin caja abierta no hay seña en efectivo
+        if etapa == "ENTREGADO":
+            for p, c in items:
+                stock[p.id] -= c
+        casos.append((cliente, items, modalidad, forma, etapa, pagos, nota, total))
+    if not casos:
+        return 0
+
+    # 2) Pedidos con sus ítems (un INSERT por tabla).
+    primero = siguiente_numero(db, PedidoClienteModel, "PED")  # toma el lock de la numeración
+    base, n = primero.rsplit("-", 1)[0], int(primero.rsplit("-", 1)[1])
+    pedidos = []
+    for k, (cliente, items, modalidad, forma, etapa, pagos, nota, total) in enumerate(casos):
+        cubierto = {"pagado": 0, "a_cuenta": 0}
+        montos = []
+        for tipo, medio, monto in pagos:
+            monto = monto if monto is not None else total - cubierto["pagado"] - cubierto["a_cuenta"]
+            cubierto["a_cuenta" if medio == "CUENTA_CORRIENTE" else "pagado"] += monto
+            montos.append((tipo, medio, monto))
+        saldo = total - cubierto["pagado"] - cubierto["a_cuenta"]
+        estado_pago = (
+            ("A_CUENTA" if cubierto["a_cuenta"] else "PAGADO") if saldo == 0
+            else "POR_RENDIR" if etapa == "ENTREGADO" else "PARCIAL" if cubierto["pagado"] else "PENDIENTE"
+        )
+        estado = {"RECIBIDO": "RECIBIDO", "ENTREGADO": "ENTREGADO"}.get(
+            etapa, "LISTO_RETIRO" if modalidad == "RETIRA_CLIENTE" else "LISTO_ENVIO"
+        )
+        pedido = PedidoClienteModel(
+            numero=f"{base}-{n + k:04d}", usuario_id=vendedor_id, cliente_id=cliente.id, cliente_nombre=cliente.nombre,
+            cliente_ruc=cliente.ruc, cliente_telefono=cliente.telefono, cliente_email=cliente.email,
+            cliente_direccion=cliente.direccion, fecha_pedido=hoy, estado=estado, subtotal=total, descuento=0, total=total,
+            notas=f"{nota} {MARCA_LOGISTICA}", modalidad_entrega=modalidad, forma_pago=forma, estado_pago=estado_pago,
+            monto_pagado=cubierto["pagado"], monto_a_cuenta=cubierto["a_cuenta"],
+            items=[
+                PedidoClienteItemModel(producto_id=p.id, cantidad=c, precio_unitario=int(p.precio_venta), subtotal=int(p.precio_venta) * int(c))
+                for p, c in items
+            ],
+        )
+        pedidos.append((pedido, montos))
+    db.add_all([p for p, _ in pedidos])
+    db.flush()
+
+    # 3) Envíos, cobros, cargos a cuenta, caja y kardex.
+    primero = siguiente_numero(db, OrdenEnvioModel, "ENV")
+    base, n = primero.rsplit("-", 1)[0], int(primero.rsplit("-", 1)[1])
+    ordenes, filas = [], []
+    for (pedido, montos), (cliente, items, modalidad, forma, etapa, *_resto) in zip(pedidos, casos):
+        orden = None
+        if etapa != "RECIBIDO":
+            retiro = modalidad == "RETIRA_CLIENTE"
+            orden = OrdenEnvioModel(
+                numero=f"{base}-{n + len(ordenes):04d}", usuario_id=deposito_id, pedido_cliente_id=pedido.id,
+                direccion_entrega="Retira en el local" if retiro else (cliente.direccion or "A coordinar"),
+                contacto_entrega=cliente.nombre, telefono_entrega=cliente.telefono, fecha_generacion=hoy,
+                estado={"LISTO": "LISTO_RETIRO" if retiro else "LISTO", "ENTREGADO": "ENTREGADO"}[etapa],
+                modalidad=modalidad, fecha_envio=hoy if etapa == "ENTREGADO" else None,
+                fecha_entrega=hoy if etapa == "ENTREGADO" else None,
+                numero_nota_remision=f"001-001-{1500 + len(ordenes):07d}" if etapa == "ENTREGADO" else None,
+                observaciones_entrega="Recibido conforme" if etapa == "ENTREGADO" else None,
+                items=[OrdenEnvioItemModel(producto_id=p.id, cantidad=c) for p, c in items],
+                **({} if retiro else TRASLADO_DEMO),
+            )
+            ordenes.append(orden)
+        filas.append((pedido, montos, orden, items, etapa))
+    db.add_all(ordenes)
+    db.flush()
+
+    nuevos = []
+    stock = dict(originales)
+    for pedido, montos, orden, items, etapa in filas:
+        for tipo, medio, monto in montos:
+            nuevos.append(PedidoPagoModel(
+                pedido_cliente_id=pedido.id, tipo=tipo, metodo=medio, monto=monto, usuario_id=vendedor_id,
+                caja_turno_id=turno.id if turno and medio != "CUENTA_CORRIENTE" else None,
+                orden_envio_id=orden.id if orden is not None and tipo == "CARGO_CUENTA" else None,
+                referencia="Op. 4471" if medio == "TRANSFERENCIA" else None,
+            ))
+            if medio == "EFECTIVO" and turno is not None:
+                nuevos.append(MovimientoCajaModel(
+                    caja_turno_id=turno.id, tipo="INGRESO", monto=monto, usuario_id=vendedor_id,
+                    motivo=f"Seña / pago anticipado pedido {pedido.numero} ({pedido.cliente_nombre})",
+                ))
+            if medio == "CUENTA_CORRIENTE":
+                nuevos.append(MovimientoCuentaCorrienteModel(
+                    cliente_id=pedido.cliente_id, tipo="CARGO", monto=monto, pedido_cliente_id=pedido.id,
+                    referencia=f"Pedido {pedido.numero}", usuario_id=deposito_id,
+                ))
+        if etapa == "ENTREGADO":
+            for p, c in items:
+                anterior = stock[p.id]
+                stock[p.id] = anterior - c
+                nuevos.append(MovimientoInventarioModel(
+                    producto_id=p.id, tipo="SALIDA", cantidad=c, stock_anterior=anterior, stock_nuevo=stock[p.id],
+                    referencia_tipo="ORDEN_ENVIO", referencia_id=orden.id, usuario_id=deposito_id,
+                    observaciones=f"Despacho orden {orden.numero}",
+                ))
+    db.add_all(nuevos)
+    db.flush()
+
+    cambios = [(pid, valor) for pid, valor in stock.items() if valor != originales[pid]]
+    if cambios:
+        valores = ", ".join(f"(CAST(:id{i} AS integer), CAST(:v{i} AS numeric))" for i in range(len(cambios)))
+        parametros = {k: v for i, (pid, valor) in enumerate(cambios) for k, v in ((f"id{i}", pid), (f"v{i}", valor))}
+        db.execute(text(f"""
+            UPDATE productos p SET stock_actual = s.stock FROM (VALUES {valores}) AS s(id, stock) WHERE p.id = s.id
+        """), parametros)
+        for p in productos.values():
+            db.expire(p)
+    return len(pedidos)

@@ -38,14 +38,24 @@ from app.infrastructure.db.repositories.contactos_repository import (
     SqlAlchemyProveedorRepository,
 )
 from app.infrastructure.db.repositories.flujo_repository import (
+    SqlAlchemyCajaTurnoRepository,
     SqlAlchemyMovimientoInventarioRepository,
     SqlAlchemyOrdenCompraRepository,
     SqlAlchemyOrdenEnvioRepository,
     SqlAlchemyPedidoClienteRepository,
     SqlAlchemySolicitudPresupuestoRepository,
 )
+from app.application.services.cobro_pedido_service import CobroPedidoService
+from app.application.services.cuenta_corriente_service import CuentaCorrienteService
 from app.application.services.orden_envio_service import OrdenEnvioService
-from app.infrastructure.db.demo_historial import cargar_stock_no_vendible, completar_medios_de_pago, generar_historial
+from app.infrastructure.db.demo_historial import (
+    cargar_logistica,
+    cargar_stock_no_vendible,
+    completar_medios_de_pago,
+    generar_historial,
+)
+from app.infrastructure.db.repositories.cobro_pedido_repository import SqlAlchemyPagoPedidoRepository
+from app.infrastructure.db.repositories.cuenta_corriente_repository import SqlAlchemyCuentaCorrienteRepository
 from app.infrastructure.db.repositories.empresa_repository import SqlAlchemyEmpresaRepository
 from app.infrastructure.db.repositories.usuario_repository import SqlAlchemyUsuarioRepository
 from app.infrastructure.db.session import SessionLocal, engine
@@ -245,8 +255,14 @@ def main(migrar: bool = True, forzar_demo: bool = False) -> None:
 
         # Pedidos de clientes en distintas etapas (uno entregado y uno listo para enviar, desde stock).
         if len(pedidos_repo.list()) < 3:
+            turnos_repo = SqlAlchemyCajaTurnoRepository(db)
+            cobros = CobroPedidoService(
+                pedidos_repo, SqlAlchemyPagoPedidoRepository(db), turnos_repo,
+                CuentaCorrienteService(SqlAlchemyCuentaCorrienteRepository(db), clientes_repo, turnos_repo),
+            )
             envios = OrdenEnvioService(
-                SqlAlchemyOrdenEnvioRepository(db), productos_repo, SqlAlchemyMovimientoInventarioRepository(db), pedidos_repo
+                SqlAlchemyOrdenEnvioRepository(db), productos_repo, SqlAlchemyMovimientoInventarioRepository(db), pedidos_repo,
+                cobros, empresa_repo,
             )
             por_nombre = {p.nombre: p for p in productos_repo.list()}
             for cliente, lineas, entregar in [
@@ -278,6 +294,16 @@ def main(migrar: bool = True, forzar_demo: bool = False) -> None:
         db.commit()
         if no_vendibles:
             print(f"Stock no vendible de demo: {no_vendibles} registros y un reclamo al proveedor")
+
+        # Pedidos con logística y cobro: pagado a retirar, pagado a entregar,
+        # con seña, entregado a cuenta y contra entrega por rendir.
+        vendedor = usuarios.get_by_email(USUARIOS_DEMO[2][0])
+        con_logistica = cargar_logistica(
+            db, vendedor_id=vendedor.id if vendedor else demo_user.id, deposito_id=deposito.id if deposito else demo_user.id,
+        )
+        db.commit()
+        if con_logistica:
+            print(f"Logística de demo: {con_logistica} pedidos con distintas formas de entrega y cobro")
 
         print("\nListo. Datos demo sembrados correctamente.")
     except Exception:
