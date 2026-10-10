@@ -1,0 +1,54 @@
+# Integración continua del backend: en cada push y pull request.
+#  1. Migraciones: `alembic upgrade head` sobre una base vacía y `alembic check`
+#     (los modelos y las migraciones tienen que coincidir).
+#  2. Tests de integración (pytest) contra otra base descartable.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: sail
+          POSTGRES_PASSWORD: sail
+          POSTGRES_DB: sail_migraciones
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sail"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGPASSWORD: sail
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt pytest httpx
+
+      - name: Migraciones en base vacía
+        env:
+          DATABASE_URL: postgresql+pg8000://sail:sail@localhost:5432/sail_migraciones
+        run: |
+          alembic upgrade head
+          alembic check
+          test "$(alembic heads | wc -l)" -eq 1 || { echo "Hay más de una cabeza de migraciones"; alembic heads; exit 1; }
+
+      - name: Tests
+        env:
+          TEST_DATABASE_URL: postgresql+pg8000://sail:sail@localhost:5432/sail_tests
+        run: |
+          psql -h localhost -U sail -d sail_migraciones -c "CREATE DATABASE sail_tests"
+          pytest -q
