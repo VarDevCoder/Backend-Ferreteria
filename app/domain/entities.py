@@ -404,7 +404,9 @@ class OrdenEnvio:
         return self.estado == EstadoOrdenEnvio.EN_TRANSITO
 
     def puede_ser_cancelada(self) -> bool:
-        return self.estado not in (EstadoOrdenEnvio.ENTREGADO, EstadoOrdenEnvio.CANCELADO)
+        """Solo antes de salir del depósito. Un envío despachado ya descontó
+        stock: si vuelve, se registra como devolución (que lo reingresa)."""
+        return self.estado in (EstadoOrdenEnvio.PREPARANDO, EstadoOrdenEnvio.LISTO)
 
     def puede_ser_eliminada(self) -> bool:
         return self.estado in (EstadoOrdenEnvio.PREPARANDO, EstadoOrdenEnvio.CANCELADO)

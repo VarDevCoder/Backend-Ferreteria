@@ -96,7 +96,10 @@ class OrdenEnvioService:
         if not orden.puede_ser_eliminada():
             raise TransicionDeEstadoInvalida("Solo se pueden eliminar órdenes en preparación o canceladas")
         self._ordenes.delete(orden_id)
-        self._revertir_pedido_a_mercaderia_recibida(orden)
+        # Una orden cancelada ya liberó su pedido al cancelarse: borrarla no
+        # tiene que tocar el pedido (que puede haber seguido con otro envío).
+        if orden.estado == EstadoOrdenEnvio.PREPARANDO:
+            self._liberar_pedido(orden, desde=EstadoPedidoCliente.LISTO_ENVIO)
 
     def marcar_lista_despacho(self, orden_id: int) -> OrdenEnvio:
         orden = self.obtener(orden_id)
@@ -182,16 +185,23 @@ class OrdenEnvioService:
 
         orden.estado = EstadoOrdenEnvio.DEVUELTO
         orden.observaciones_entrega = observaciones
-        return self._ordenes.update(orden)
+        orden = self._ordenes.update(orden)
+        # La mercadería volvió al depósito: el pedido se puede reenviar o cancelar.
+        self._liberar_pedido(orden, desde=EstadoPedidoCliente.ENVIADO)
+        return orden
 
     def cancelar(self, orden_id: int, observaciones: str) -> OrdenEnvio:
         orden = self.obtener(orden_id)
+        if orden.estado == EstadoOrdenEnvio.EN_TRANSITO:
+            raise TransicionDeEstadoInvalida(
+                "El envío ya salió del depósito y descontó stock: si vuelve, registrá la devolución"
+            )
         if not orden.puede_ser_cancelada():
             raise TransicionDeEstadoInvalida("Esta orden no puede ser cancelada")
         orden.estado = EstadoOrdenEnvio.CANCELADO
         orden.observaciones_entrega = observaciones
         orden = self._ordenes.update(orden)
-        self._revertir_pedido_a_mercaderia_recibida(orden)
+        self._liberar_pedido(orden, desde=EstadoPedidoCliente.LISTO_ENVIO)
         return orden
 
     def _validar_stock_para(self, pedido) -> None:
@@ -207,8 +217,11 @@ class OrdenEnvioService:
         if faltantes:
             raise StockInsuficienteParaPedido(faltantes)
 
-    def _revertir_pedido_a_mercaderia_recibida(self, orden: OrdenEnvio) -> None:
+    def _liberar_pedido(self, orden: OrdenEnvio, desde: EstadoPedidoCliente) -> None:
+        """Vuelve el pedido a MERCADERIA_RECIBIDA (mercadería disponible para
+        enviar) solo si sigue en el estado en que lo dejó este envío: así no
+        se retrocede un pedido que ya avanzó con otro envío."""
         pedido = self._pedidos.get_by_id(orden.pedido_cliente_id)
-        if pedido is not None:
+        if pedido is not None and pedido.estado == desde:
             pedido.estado = EstadoPedidoCliente.MERCADERIA_RECIBIDA
             self._pedidos.update(pedido)
