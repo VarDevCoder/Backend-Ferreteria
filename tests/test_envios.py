@@ -77,3 +77,23 @@ def test_borrar_envio_en_preparacion_libera_el_pedido(client):
     orden = envio(client, admin, ped, p, 2)
     assert client.delete(f"{API}/ordenes-envio/{orden['id']}", headers=auth(admin)).status_code == 200
     assert estado_pedido(client, admin, ped) == "MERCADERIA_RECIBIDA"
+
+
+def test_entregar_sin_observaciones(client):
+    """Antes: con cuerpo {} respondía 422 porque exigía observaciones."""
+    admin = configurar(client)
+    _, ped, orden = _despachado(client, admin)
+    r = accion_envio(client, admin, orden, "entregar", {})
+    assert r.status_code == 200, r.text
+    assert r.json()["observaciones_entrega"] is None
+    assert estado_pedido(client, admin, ped) == "ENTREGADO"
+
+
+def test_entregar_con_observaciones_y_sin_cuerpo(client):
+    admin = configurar(client)
+    _, _, orden = _despachado(client, admin)
+    r = accion_envio(client, admin, orden, "entregar", {"observaciones": "Recibió Juan"})
+    assert r.status_code == 200 and r.json()["observaciones_entrega"] == "Recibió Juan"
+    _, _, otra = _despachado(client, admin)
+    r = client.post(f"{API}/ordenes-envio/{otra['id']}/entregar", headers=auth(admin))
+    assert r.status_code == 200, r.text

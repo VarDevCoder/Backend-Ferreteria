@@ -1,11 +1,11 @@
 """Endpoints de Órdenes de Envío al cliente (CU-17, CU-18)."""
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Body, Depends
 
 from app.application.services.orden_envio_service import OrdenEnvioService
 from app.interfaces.api.deps import RequireSailUser, get_orden_envio_service
-from app.interfaces.api.schemas.common import Mensaje, ObservacionesRequeridas
+from app.interfaces.api.schemas.common import Mensaje, ObservacionesOpcionales, ObservacionesRequeridas
 from app.interfaces.api.schemas.flujo import DespacharInput, OrdenEnvioCreate, OrdenEnvioResponse
 
 router = APIRouter(prefix="/ordenes-envio", tags=["Órdenes de Envío"])
@@ -46,8 +46,12 @@ def despachar_orden(orden_id: int, datos: DespacharInput, servicio: OrdenSvc, us
 
 
 @router.post("/{orden_id}/entregar", response_model=OrdenEnvioResponse)
-def entregar_orden(orden_id: int, datos: ObservacionesRequeridas | None, servicio: OrdenSvc, _usuario: RequireSailUser) -> OrdenEnvioResponse:
-    observaciones = datos.observaciones if datos else None
+def entregar_orden(
+    orden_id: int, servicio: OrdenSvc, _usuario: RequireSailUser,
+    datos: Annotated[ObservacionesOpcionales | None, Body()] = None,
+) -> OrdenEnvioResponse:
+    """Las observaciones de la entrega son opcionales: se acepta sin cuerpo, con {} o con texto."""
+    observaciones = (datos.observaciones or "").strip() or None if datos else None
     return OrdenEnvioResponse.desde_entidad(servicio.entregar(orden_id, observaciones))
 
 

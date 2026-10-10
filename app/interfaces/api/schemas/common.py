@@ -11,3 +11,7 @@ class MotivoRequerido(BaseModel):
 
 class ObservacionesRequeridas(BaseModel):
     observaciones: str
+
+
+class ObservacionesOpcionales(BaseModel):
+    observaciones: str | None = None
