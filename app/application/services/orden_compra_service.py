@@ -151,8 +151,10 @@ class OrdenCompraService:
             raise TransicionDeEstadoInvalida("No se puede recibir mercadería para esta orden")
 
         items_por_id = {item.id: item for item in orden.items}
-        for item_id, cantidad_recibida in cantidades_por_item.items():
+        for item_id, cantidad in cantidades_por_item.items():
             item = items_por_id.get(item_id)
+            # El JSON trae float; el stock y las cantidades se manejan en Decimal.
+            cantidad_recibida = Decimal(str(cantidad))
             if item is None or cantidad_recibida <= 0:
                 continue
 
