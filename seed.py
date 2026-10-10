@@ -96,8 +96,8 @@ CLIENTES_EXTRA = [
 ]
 
 
-def main(migrar: bool = True) -> None:
-    if not ("--demo" in sys.argv or get_settings().seed_demo):
+def main(migrar: bool = True, forzar_demo: bool = False) -> None:
+    if not (forzar_demo or "--demo" in sys.argv or get_settings().seed_demo):
         print("SEED_DEMO no está activo: no se cargan datos de ejemplo.")
         return
 

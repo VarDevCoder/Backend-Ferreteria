@@ -160,5 +160,9 @@ app.include_router(usuarios.router, prefix=API, dependencies=_protegido(Modulo.U
 
 
 @app.get("/", tags=["Salud"], summary="Chequeo de salud")
-def salud() -> dict:
-    return {"status": "ok", "app": settings.app_name}
+def salud(request: Request) -> dict:
+    respuesta = {"status": "ok", "app": settings.app_name}
+    demo = getattr(request.app.state, "demo", None)  # lo deja api/index.py (Vercel)
+    if demo is not None:
+        respuesta["demo"] = demo
+    return respuesta
