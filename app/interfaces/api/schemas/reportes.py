@@ -36,6 +36,15 @@ class PedidosEntregados(BaseModel):
     total: int
 
 
+class VentasPorPedidos(BaseModel):
+    """Lo cobrado por pedidos en el período (señas, pagos anticipados,
+    rendiciones y cargos a cuenta al entregar), aparte del mostrador."""
+
+    cantidad_pedidos: int
+    total: int
+    por_metodo_pago: list[VentasPorMetodo]
+
+
 class ReporteVentasResponse(BaseModel):
     desde: date
     hasta: date
@@ -44,3 +53,4 @@ class ReporteVentasResponse(BaseModel):
     por_dia: list[VentasPorDia]
     productos_mas_vendidos: list[ProductoVendido]
     pedidos_entregados: PedidosEntregados
+    ventas_por_pedidos: VentasPorPedidos

@@ -9,6 +9,7 @@ from app.infrastructure.db.tiempo_sql import fecha_local
 
 from app.infrastructure.db.models import (
     PedidoClienteModel,
+    PedidoPagoModel,
     ProductoModel,
     VentaMostradorItemModel,
     VentaMostradorModel,
@@ -95,3 +96,27 @@ class SqlAlchemyReporteRepository:
         )
         cantidad, total = self._session.execute(stmt).one()
         return {"cantidad": cantidad, "total": int(total)}
+
+    def ventas_por_pedidos(self, desde: date, hasta: date) -> dict:
+        """Lo cobrado por pedidos en el período (señas, pagos anticipados,
+        rendiciones y cargos a cuenta al entregar), por la fecha del cobro y
+        sin los pagos anulados. Va aparte de las ventas de mostrador."""
+        inicio, fin = _rango(desde, hasta)
+        vigentes = (
+            PedidoPagoModel.anulado.is_(False), PedidoPagoModel.created_at >= inicio, PedidoPagoModel.created_at < fin,
+        )
+        cantidad, total = self._session.execute(
+            select(func.count(func.distinct(PedidoPagoModel.pedido_cliente_id)), func.coalesce(func.sum(PedidoPagoModel.monto), 0))
+            .where(*vigentes)
+        ).one()
+        por_metodo = self._session.execute(
+            select(PedidoPagoModel.metodo, func.count(func.distinct(PedidoPagoModel.pedido_cliente_id)), func.sum(PedidoPagoModel.monto))
+            .where(*vigentes)
+            .group_by(PedidoPagoModel.metodo)
+            .order_by(func.sum(PedidoPagoModel.monto).desc())
+        ).all()
+        return {
+            "cantidad_pedidos": cantidad,
+            "total": int(total),
+            "por_metodo_pago": [{"metodo_pago": m, "cantidad": c, "total": int(t)} for m, c, t in por_metodo],
+        }

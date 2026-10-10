@@ -5,11 +5,13 @@ from fastapi import APIRouter, Depends
 
 from app.application.permisos import descuento_maximo, puede_cambiar_precio_de_venta
 from app.application.services.catalogo_service import ProductoService
+from app.application.services.cobro_pedido_service import CobroPedidoService
 from app.application.services.contactos_service import ProveedorProductoService, ProveedorService
 from app.application.services.pedido_cliente_service import PedidoClienteService
 from app.application.services.solicitud_presupuesto_service import SolicitudPresupuestoService
 from app.interfaces.api.deps import (
     RequireSailUser,
+    get_cobro_pedido_service,
     get_pedido_cliente_service,
     get_producto_service,
     get_proveedor_producto_service,
@@ -17,6 +19,7 @@ from app.interfaces.api.deps import (
     get_solicitud_service,
 )
 from app.interfaces.api.schemas.common import Mensaje, MotivoRequerido
+from app.interfaces.api.schemas.logistica import CondicionesPedidoInput
 from app.interfaces.api.schemas.flujo import (
     DisponibilidadItem,
     ComparacionPedidoResponse,
@@ -63,6 +66,17 @@ def actualizar_pedido(pedido_id: int, datos: PedidoClienteUpdate, servicio: Pedi
         puede_cambiar_precios=puede_cambiar_precio_de_venta(usuario.rol), descuento_maximo=descuento_maximo(usuario.rol),
     )
     return PedidoClienteResponse.desde_entidad(pedido)
+
+
+@router.patch(
+    "/{pedido_id}/condiciones", response_model=PedidoClienteResponse,
+    summary="Cambiar cómo se entrega (domicilio o retiro) y cómo se paga (anticipado, contra entrega o a cuenta)",
+)
+def cambiar_condiciones(
+    pedido_id: int, datos: CondicionesPedidoInput, cobros: Annotated[CobroPedidoService, Depends(get_cobro_pedido_service)],
+    _usuario: RequireSailUser,
+) -> PedidoClienteResponse:
+    return PedidoClienteResponse.desde_entidad(cobros.cambiar_condiciones(pedido_id, datos.modalidad_entrega, datos.forma_pago))
 
 
 @router.delete("/{pedido_id}", response_model=Mensaje)

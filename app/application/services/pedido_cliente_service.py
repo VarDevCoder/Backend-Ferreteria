@@ -5,12 +5,14 @@ from decimal import Decimal
 
 from app.core.tiempo import hoy
 from app.domain.entities import PedidoCliente, PedidoClienteItem, SolicitudPresupuesto, SolicitudPresupuestoItem
-from app.domain.enums import EstadoPedidoCliente, EstadoSolicitudPresupuesto
+from app.domain.enums import EstadoPedidoCliente, EstadoSolicitudPresupuesto, FormaPagoPedido
 from app.application.services.caja_service import validar_descuento
+from app.application.services.cobro_pedido_service import CobroPedidoService
 from app.application.validaciones import validar_items
 from app.domain.exceptions import PermisoDenegado, RecursoNoEncontrado, SolicitudInvalida, TransicionDeEstadoInvalida
 from app.domain.repositories import (
     ClienteRepository,
+    PagoPedidoRepository,
     PedidoClienteRepository,
     ProductoRepository,
     ProveedorRepository,
@@ -26,12 +28,14 @@ class PedidoClienteService:
         proveedores: ProveedorRepository,
         solicitudes: SolicitudPresupuestoRepository,
         productos: ProductoRepository,
+        pagos: PagoPedidoRepository | None = None,
     ):
         self._pedidos = pedidos
         self._clientes = clientes
         self._proveedores = proveedores
         self._solicitudes = solicitudes
         self._productos = productos
+        self._pagos = pagos
 
     def listar(self, estado: str | None = None, busqueda: str | None = None) -> list[PedidoCliente]:
         return self._pedidos.list(estado=estado, busqueda=busqueda)
@@ -58,8 +62,11 @@ class PedidoClienteService:
         notas: str | None = None,
         puede_cambiar_precios: bool = True,
         descuento_maximo: int = 100,
+        modalidad_entrega: str | None = None,
+        forma_pago: str | None = None,
     ) -> PedidoCliente:
         validar_descuento(descuento, descuento_maximo)
+        modalidad, forma = CobroPedidoService.validar_condiciones_iniciales(modalidad_entrega, forma_pago, cliente_id)
         validar_items(self._productos, items, para_vender=True)
         if not puede_cambiar_precios:
             self._validar_precios(items)
@@ -90,6 +97,8 @@ class PedidoClienteService:
             estado=EstadoPedidoCliente.RECIBIDO,
             descuento=descuento,
             notas=notas,
+            modalidad_entrega=modalidad,
+            forma_pago=forma,
             items=[
                 PedidoClienteItem(
                     id=None, pedido_cliente_id=None, producto_id=i["producto_id"],
@@ -99,6 +108,7 @@ class PedidoClienteService:
             ],
         )
         pedido.calcular_totales()
+        pedido.recalcular_estado_pago()
         return self._pedidos.add(pedido)
 
     def actualizar(
@@ -146,6 +156,14 @@ class PedidoClienteService:
             for i in items
         ]
         pedido.calcular_totales()
+        if pedido.total < pedido.cubierto():
+            raise SolicitudInvalida(
+                f"El total del pedido no puede quedar por debajo de lo ya cobrado (Gs. {pedido.cubierto():,}). "
+                "Anulá la seña primero".replace(",", ".")
+            )
+        if cliente_id is None and pedido.forma_pago == FormaPagoPedido.CUENTA_CORRIENTE:
+            raise SolicitudInvalida("Un pedido a cuenta tiene que ser de un cliente del catálogo")
+        pedido.recalcular_estado_pago()
 
         self._pedidos.replace_items(pedido_id, pedido.items)
         return self._pedidos.update(pedido)
@@ -168,6 +186,8 @@ class PedidoClienteService:
         pedido = self.obtener(pedido_id)
         if not pedido.puede_ser_cancelado():
             raise TransicionDeEstadoInvalida("Esta solicitud no puede ser eliminada")
+        if self._pagos is not None and self._pagos.list_by_pedido(pedido_id):
+            raise TransicionDeEstadoInvalida("El pedido tiene cobros registrados: cancelalo en lugar de eliminarlo")
         self._pedidos.delete(pedido_id)
 
     def procesar(self, pedido_id: int) -> PedidoCliente:
@@ -181,6 +201,10 @@ class PedidoClienteService:
         pedido = self.obtener(pedido_id)
         if not pedido.puede_ser_cancelado():
             raise TransicionDeEstadoInvalida("Esta solicitud no puede ser cancelada")
+        if pedido.monto_pagado > 0:
+            raise TransicionDeEstadoInvalida(
+                f"El pedido tiene cobrados Gs. {pedido.monto_pagado:,}: anulá (devolvé) la seña antes de cancelarlo".replace(",", ".")
+            )
         pedido.estado = EstadoPedidoCliente.CANCELADO
         pedido.motivo_cancelacion = motivo
         return self._pedidos.update(pedido)

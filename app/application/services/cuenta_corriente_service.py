@@ -63,11 +63,16 @@ class CuentaCorrienteService:
                 f"{cliente.nombre} supera su límite de crédito: le quedan Gs. {max(0, disponible):,} disponibles".replace(",", ".")
             )
 
-    def registrar_cargo(self, cliente_id: int, monto: int, venta_id: int, caja_turno_id: int, referencia: str, usuario_id: int) -> None:
+    def registrar_cargo(
+        self, cliente_id: int, monto: int, venta_id: int | None, caja_turno_id: int | None, referencia: str,
+        usuario_id: int, pedido_cliente_id: int | None = None,
+    ) -> None:
+        """Cargo por una venta a cuenta o por un pedido entregado a cuenta."""
         self._cuentas.add(
             MovimientoCuentaCorriente(
                 id=None, cliente_id=cliente_id, tipo=TipoMovimientoCuentaCorriente.CARGO, monto=monto,
                 venta_id=venta_id, caja_turno_id=caja_turno_id, referencia=referencia, usuario_id=usuario_id,
+                pedido_cliente_id=pedido_cliente_id,
             )
         )
 

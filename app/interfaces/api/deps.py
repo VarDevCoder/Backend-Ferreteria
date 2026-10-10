@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from app.application.services.caja_service import CajaService
 from app.application.services.catalogo_service import CategoriaService, ProductoService
 from app.application.services.contactos_service import ClienteService, ProveedorProductoService, ProveedorService
+from app.application.services.cobro_pedido_service import CobroPedidoService
 from app.application.services.cuenta_corriente_service import CuentaCorrienteService
 from app.application.permisos import Modulo, puede_leer, puede_modificar
 from app.application.services.dashboard_service import DashboardService
@@ -39,6 +40,7 @@ from app.infrastructure.db.repositories.contactos_repository import (
     SqlAlchemyProveedorProductoRepository,
     SqlAlchemyProveedorRepository,
 )
+from app.infrastructure.db.repositories.cobro_pedido_repository import SqlAlchemyPagoPedidoRepository
 from app.infrastructure.db.repositories.cuenta_corriente_repository import SqlAlchemyCuentaCorrienteRepository
 from app.infrastructure.db.repositories.flujo_repository import (
     SqlAlchemyCajaTurnoRepository,
@@ -164,8 +166,9 @@ def get_pedido_cliente_service(
     proveedores: Annotated[SqlAlchemyProveedorRepository, Depends(get_proveedor_repo)],
     solicitudes: Annotated[SqlAlchemySolicitudPresupuestoRepository, Depends(get_solicitud_repo)],
     productos: Annotated[SqlAlchemyProductoRepository, Depends(get_producto_repo)],
+    db: DbSession,
 ) -> PedidoClienteService:
-    return PedidoClienteService(pedidos, clientes, proveedores, solicitudes, productos)
+    return PedidoClienteService(pedidos, clientes, proveedores, solicitudes, productos, SqlAlchemyPagoPedidoRepository(db))
 
 
 def get_solicitud_service(
@@ -184,15 +187,6 @@ def get_orden_compra_service(
     pedidos: Annotated[SqlAlchemyPedidoClienteRepository, Depends(get_pedido_cliente_repo)],
 ) -> OrdenCompraService:
     return OrdenCompraService(ordenes, productos, movimientos, pedidos)
-
-
-def get_orden_envio_service(
-    ordenes: Annotated[SqlAlchemyOrdenEnvioRepository, Depends(get_orden_envio_repo)],
-    productos: Annotated[SqlAlchemyProductoRepository, Depends(get_producto_repo)],
-    movimientos: Annotated[SqlAlchemyMovimientoInventarioRepository, Depends(get_movimiento_repo)],
-    pedidos: Annotated[SqlAlchemyPedidoClienteRepository, Depends(get_pedido_cliente_repo)],
-) -> OrdenEnvioService:
-    return OrdenEnvioService(ordenes, productos, movimientos, pedidos)
 
 
 def get_inventario_service(
@@ -227,6 +221,30 @@ def get_cuenta_corriente_service(
     turnos: Annotated[SqlAlchemyCajaTurnoRepository, Depends(get_caja_turno_repo)],
 ) -> CuentaCorrienteService:
     return CuentaCorrienteService(cuentas, clientes, turnos)
+
+
+def get_pago_pedido_repo(db: DbSession) -> SqlAlchemyPagoPedidoRepository:
+    return SqlAlchemyPagoPedidoRepository(db)
+
+
+def get_cobro_pedido_service(
+    pedidos: Annotated[SqlAlchemyPedidoClienteRepository, Depends(get_pedido_cliente_repo)],
+    pagos: Annotated[SqlAlchemyPagoPedidoRepository, Depends(get_pago_pedido_repo)],
+    turnos: Annotated[SqlAlchemyCajaTurnoRepository, Depends(get_caja_turno_repo)],
+    cuenta_corriente: Annotated[CuentaCorrienteService, Depends(get_cuenta_corriente_service)],
+) -> CobroPedidoService:
+    return CobroPedidoService(pedidos, pagos, turnos, cuenta_corriente)
+
+
+def get_orden_envio_service(
+    ordenes: Annotated[SqlAlchemyOrdenEnvioRepository, Depends(get_orden_envio_repo)],
+    productos: Annotated[SqlAlchemyProductoRepository, Depends(get_producto_repo)],
+    movimientos: Annotated[SqlAlchemyMovimientoInventarioRepository, Depends(get_movimiento_repo)],
+    pedidos: Annotated[SqlAlchemyPedidoClienteRepository, Depends(get_pedido_cliente_repo)],
+    cobros: Annotated[CobroPedidoService, Depends(get_cobro_pedido_service)],
+    empresa: Annotated[SqlAlchemyEmpresaRepository, Depends(get_empresa_repo)],
+) -> OrdenEnvioService:
+    return OrdenEnvioService(ordenes, productos, movimientos, pedidos, cobros, empresa)
 
 
 def get_caja_service(

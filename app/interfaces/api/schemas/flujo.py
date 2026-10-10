@@ -25,6 +25,8 @@ class PedidoClienteCreate(BaseModel):
     descuento: int = Field(default=0, ge=0, le=100)
     notas: str | None = None
     items: list[ItemPedidoInput] = Field(min_length=1)
+    modalidad_entrega: str | None = Field(default=None, description="ENTREGA_DOMICILIO (por defecto) o RETIRA_CLIENTE")
+    forma_pago: str | None = Field(default=None, description="CONTRA_ENTREGA (por defecto), ANTICIPADO o CUENTA_CORRIENTE")
 
 
 class PedidoClienteUpdate(BaseModel):
@@ -68,6 +70,13 @@ class PedidoClienteResponse(BaseModel):
     motivo_cancelacion: str | None
     created_at: datetime | None
     items: list[ItemPedidoResponse]
+    modalidad_entrega: str
+    forma_pago: str | None
+    estado_pago: str
+    monto_pagado: int
+    monto_a_cuenta: int
+    saldo: int
+    etiqueta_cobro: str
 
     @classmethod
     def desde_entidad(cls, p) -> "PedidoClienteResponse":
@@ -78,6 +87,9 @@ class PedidoClienteResponse(BaseModel):
             fecha_entrega_solicitada=p.fecha_entrega_solicitada, estado=p.estado.value, subtotal=p.subtotal,
             descuento=p.descuento, total=p.total, notas=p.notas, motivo_cancelacion=p.motivo_cancelacion,
             created_at=p.created_at,
+            modalidad_entrega=p.modalidad_entrega.value, forma_pago=p.forma_pago.value if p.forma_pago else None,
+            estado_pago=p.estado_pago.value, monto_pagado=p.monto_pagado, monto_a_cuenta=p.monto_a_cuenta,
+            saldo=p.saldo(), etiqueta_cobro=p.etiqueta_cobro(),
             items=[
                 ItemPedidoResponse(id=i.id, producto_id=i.producto_id, cantidad=float(i.cantidad),
                                     precio_unitario=i.precio_unitario, subtotal=i.subtotal)
@@ -268,18 +280,30 @@ class ItemOrdenEnvioInput(BaseModel):
     cantidad: float = Field(gt=0)
 
 
-class OrdenEnvioCreate(BaseModel):
+class TrasladoInput(BaseModel):
+    """Datos del traslado. SAIL no emite la nota de remisión: registra su número."""
+
+    transportista: str | None = Field(default=None, max_length=255)
+    numero_nota_remision: str | None = Field(default=None, max_length=50)
+    transportista_ruc: str | None = Field(default=None, max_length=50)
+    vehiculo: str | None = Field(default=None, max_length=100, description="Marca y chapa")
+    conductor_nombre: str | None = Field(default=None, max_length=255)
+    conductor_documento: str | None = Field(default=None, max_length=50)
+
+
+class OrdenEnvioCreate(TrasladoInput):
     pedido_cliente_id: int
-    direccion_entrega: str = Field(min_length=1, max_length=500)
+    direccion_entrega: str | None = Field(
+        default=None, max_length=500, description="Obligatoria para entrega a domicilio; en un retiro, 'Retira en el local'",
+    )
     contacto_entrega: str | None = None
     telefono_entrega: str | None = None
     metodo_envio: str | None = None
-    transportista: str | None = None
     notas: str | None = None
     items: list[ItemOrdenEnvioInput] = Field(min_length=1)
 
 
-class DespacharInput(BaseModel):
+class DespacharInput(TrasladoInput):
     numero_guia: str | None = None
 
 
@@ -308,6 +332,12 @@ class OrdenEnvioResponse(BaseModel):
     observaciones_entrega: str | None
     created_at: datetime | None
     items: list[ItemOrdenEnvioResponse]
+    modalidad: str
+    numero_nota_remision: str | None
+    transportista_ruc: str | None
+    vehiculo: str | None
+    conductor_nombre: str | None
+    conductor_documento: str | None
 
     @classmethod
     def desde_entidad(cls, o) -> "OrdenEnvioResponse":
@@ -318,6 +348,9 @@ class OrdenEnvioResponse(BaseModel):
             fecha_entrega=o.fecha_entrega, estado=o.estado.value, metodo_envio=o.metodo_envio,
             numero_guia=o.numero_guia, transportista=o.transportista, notas=o.notas,
             observaciones_entrega=o.observaciones_entrega, created_at=o.created_at,
+            modalidad=o.modalidad.value, numero_nota_remision=o.numero_nota_remision,
+            transportista_ruc=o.transportista_ruc, vehiculo=o.vehiculo, conductor_nombre=o.conductor_nombre,
+            conductor_documento=o.conductor_documento,
             items=[ItemOrdenEnvioResponse(id=i.id, producto_id=i.producto_id, cantidad=float(i.cantidad)) for i in o.items],
         )
 

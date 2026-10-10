@@ -38,4 +38,7 @@ class ReporteService:
             "por_dia": por_dia,
             "productos_mas_vendidos": productos,
             "pedidos_entregados": self._reportes.pedidos_entregados(desde, hasta),
+            # Lo cobrado por pedidos, en una línea aparte de mostrador.
+            # DECISIÓN A CONFIRMAR CON EL DUEÑO (por ahora no se suma al total de mostrador).
+            "ventas_por_pedidos": self._reportes.ventas_por_pedidos(desde, hasta),
         }
