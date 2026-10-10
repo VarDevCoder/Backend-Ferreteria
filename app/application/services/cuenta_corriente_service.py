@@ -49,6 +49,7 @@ class CuentaCorrienteService:
         """Verifica que el cliente pueda llevarse `monto` a cuenta."""
         if not cliente_id:
             raise SolicitudInvalida("Para vender a cuenta tenés que elegir el cliente")
+        self._cuentas.bloquear_cliente(cliente_id)  # dos ventas a cuenta simultáneas: de a una
         cliente = self._cliente(cliente_id)
         if not cliente.activo:
             raise SolicitudInvalida(f"{cliente.nombre} está inactivo")
@@ -73,6 +74,9 @@ class CuentaCorrienteService:
     def registrar_cobro(
         self, cliente_id: int, monto: int, metodo: str, referencia: str | None, usuario_id: int
     ) -> MovimientoCuentaCorriente:
+        # Mismo orden de bloqueo que una venta (turno y después cliente).
+        turno = self._turnos.get_abierto(bloquear=True)
+        self._cuentas.bloquear_cliente(cliente_id)
         cliente = self._cliente(cliente_id)
         try:
             metodo_pago = MetodoPago(metodo)
@@ -88,7 +92,6 @@ class CuentaCorrienteService:
                 f"{cliente.nombre} debe Gs. {saldo:,}; no se puede cobrar más que eso".replace(",", ".")
             )
 
-        turno = self._turnos.get_abierto()
         if metodo_pago == MetodoPago.EFECTIVO:
             if turno is None:
                 raise TransicionDeEstadoInvalida("Para cobrar en efectivo tiene que haber una caja abierta")

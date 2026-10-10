@@ -7,10 +7,10 @@ casos de uso — separarlos en cinco archivos no aportaría claridad extra.
 """
 from __future__ import annotations
 
-from sqlalchemy import func, select
+from sqlalchemy import Integer, cast, func, select, text
 from sqlalchemy.orm import Session, selectinload
 
-from app.infrastructure.db.tiempo_sql import anio_actual_sql, anio_local, fecha_local, hoy_sql
+from app.infrastructure.db.tiempo_sql import anio_actual_sql, fecha_local, hoy_sql
 
 from app.domain.entities import (
     CajaTurno,
@@ -58,12 +58,21 @@ from app.infrastructure.db.models import (
 
 
 def siguiente_numero(session: Session, modelo, prefijo: str) -> str:
-    """Próximo número correlativo del año (en la hora de la empresa): PREFIJO-AAAA-NNNN."""
+    """Próximo número correlativo del año (en la hora de la empresa): PREFIJO-AAAA-NNNN.
+
+    Es el mayor número del año + 1 (no la cantidad + 1, que se repetía al
+    borrar un documento). Un lock de Postgres por tipo de documento, que dura
+    hasta el fin de la transacción, hace que dos documentos simultáneos no
+    reciban el mismo número.
+    """
+    session.execute(text("SELECT pg_advisory_xact_lock(hashtext(:clave))"), {"clave": f"numeracion-{prefijo}"})
     anio = int(session.execute(select(anio_actual_sql())).scalar_one())
-    cantidad = session.execute(
-        select(func.count()).select_from(modelo).where(anio_local(modelo.created_at) == anio)
-    ).scalar_one()
-    return f"{prefijo}-{anio}-{cantidad + 1:04d}"
+    base = f"{prefijo}-{anio}-"
+    ultimo = session.execute(
+        select(func.max(cast(func.substr(modelo.numero, len(base) + 1), Integer)))
+        .where(modelo.numero.op("~")(f"^{base}[0-9]+$"))
+    ).scalar()
+    return f"{base}{(ultimo or 0) + 1:04d}"
 
 
 class SqlAlchemyPedidoClienteRepository:
@@ -652,13 +661,24 @@ class SqlAlchemyCajaTurnoRepository:
         row = self._session.get(CajaTurnoModel, turno_id, options=[selectinload(CajaTurnoModel.movimientos)])
         return self._to_entity(row) if row else None
 
-    def get_abierto(self) -> CajaTurno | None:
+    def bloquear_apertura(self) -> None:
+        """Serializa la apertura de caja: dos aperturas simultáneas no pueden
+        dejar dos turnos abiertos (dura hasta el fin de la transacción)."""
+        self._session.execute(text("SELECT pg_advisory_xact_lock(hashtext('apertura-de-caja'))"))
+
+    def get_abierto(self, bloquear: bool = False) -> CajaTurno | None:
+        """Con `bloquear`, toma el turno con SELECT ... FOR UPDATE: las ventas,
+        movimientos y el cierre del mismo turno se hacen de a uno."""
+        if bloquear:
+            self.bloquear_apertura()
         stmt = (
             select(CajaTurnoModel)
             .options(selectinload(CajaTurnoModel.movimientos))
             .where(CajaTurnoModel.estado == EstadoCajaTurno.ABIERTO)
             .order_by(CajaTurnoModel.fecha_apertura.desc())
         )
+        if bloquear:
+            stmt = stmt.with_for_update(of=CajaTurnoModel).execution_options(populate_existing=True)
         row = self._session.execute(stmt).unique().scalars().first()
         return self._to_entity(row) if row else None
 

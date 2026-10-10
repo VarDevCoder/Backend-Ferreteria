@@ -22,6 +22,11 @@ class SqlAlchemyCuentaCorrienteRepository:
     def __init__(self, session: Session):
         self._session = session
 
+    def bloquear_cliente(self, cliente_id: int) -> None:
+        """Toma la fila del cliente (FOR UPDATE): dos ventas a cuenta o cobros
+        simultáneos del mismo cliente se validan de a uno contra su saldo."""
+        self._session.execute(select(ClienteModel.id).where(ClienteModel.id == cliente_id).with_for_update())
+
     def saldo(self, cliente_id: int) -> int:
         return int(self._session.execute(select(_SALDO).where(_M.cliente_id == cliente_id)).scalar_one())
 

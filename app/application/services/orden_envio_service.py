@@ -112,6 +112,7 @@ class OrdenEnvioService:
         orden = self.obtener(orden_id)
         if not orden.puede_ser_despachada():
             raise TransicionDeEstadoInvalida("Esta orden no puede ser despachada")
+        self._productos.bloquear(item.producto_id for item in orden.items)
 
         for item in orden.items:
             producto = self._productos.get_by_id(item.producto_id)
@@ -165,6 +166,7 @@ class OrdenEnvioService:
         orden = self.obtener(orden_id)
         if not orden.puede_ser_devuelta():
             raise TransicionDeEstadoInvalida("Solo se pueden devolver órdenes en tránsito")
+        self._productos.bloquear(item.producto_id for item in orden.items)
 
         for item in orden.items:
             producto = self._productos.get_by_id(item.producto_id)

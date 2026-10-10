@@ -29,6 +29,7 @@ class InventarioService:
         """Fija el stock de un producto al valor contado y deja el ajuste en
         el kardex. `cantidad` queda con signo: positiva si sumó, negativa si
         restó, para que el historial explique la diferencia."""
+        self._productos.bloquear([producto_id])  # que una venta simultánea no se pierda
         producto = self._productos.get_by_id(producto_id)
         if producto is None:
             raise RecursoNoEncontrado("Producto", producto_id)

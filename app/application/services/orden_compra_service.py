@@ -152,6 +152,7 @@ class OrdenCompraService:
             raise TransicionDeEstadoInvalida("No se puede recibir mercadería para esta orden")
 
         items_por_id = {item.id: item for item in orden.items}
+        self._productos.bloquear(item.producto_id for item in orden.items)
         for item_id, cantidad in cantidades_por_item.items():
             item = items_por_id.get(item_id)
             # El JSON trae float; el stock y las cantidades se manejan en Decimal.

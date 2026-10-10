@@ -117,6 +117,17 @@ class SqlAlchemyProductoRepository:
         row = self._session.get(ProductoModel, producto_id)
         return self._to_entity(row) if row else None
 
+    def bloquear(self, producto_ids) -> None:
+        """SELECT ... FOR UPDATE de esos productos (en orden de id, para no
+        trabarse con otra operación): hasta el fin de la transacción nadie más
+        puede cambiarles el stock, y las lecturas siguientes ven el valor actual."""
+        ids = sorted(set(producto_ids))
+        if ids:
+            self._session.execute(
+                select(ProductoModel).where(ProductoModel.id.in_(ids)).order_by(ProductoModel.id)
+                .with_for_update().execution_options(populate_existing=True)
+            ).scalars().all()
+
     def get_by_codigo(self, codigo: str) -> Producto | None:
         row = self._session.execute(select(ProductoModel).where(ProductoModel.codigo == codigo)).scalar_one_or_none()
         return self._to_entity(row) if row else None

@@ -63,6 +63,7 @@ class CajaService:
         return turno
 
     def abrir_turno(self, usuario_id: int, fondo_inicial: int) -> CajaTurno:
+        self._turnos.bloquear_apertura()  # dos aperturas simultáneas: abre una sola
         if self._turnos.get_abierto() is not None:
             raise TransicionDeEstadoInvalida("Ya hay un turno de caja abierto")
         if fondo_inicial < 0:
@@ -71,6 +72,7 @@ class CajaService:
         return self._turnos.add(turno)
 
     def registrar_movimiento(self, turno_id: int, tipo: str, monto: int, motivo: str | None, usuario_id: int) -> CajaTurno:
+        self._turnos.get_abierto(bloquear=True)  # de a uno con ventas y cierre
         turno = self.obtener_turno(turno_id)
         if not turno.puede_registrar_ventas():
             raise TransicionDeEstadoInvalida("El turno de caja no está abierto")
@@ -85,6 +87,7 @@ class CajaService:
         return self.obtener_turno(turno_id)
 
     def cerrar_turno(self, turno_id: int, conteo_fisico: int, notas: str | None) -> CajaTurno:
+        self._turnos.get_abierto(bloquear=True)  # que no entre una venta a mitad del arqueo
         turno = self.obtener_turno(turno_id)
         if not turno.puede_cerrarse():
             raise TransicionDeEstadoInvalida("El turno ya está cerrado")
@@ -120,12 +123,15 @@ class CajaService:
         que sumar el total. Sin `pagos`, se cobra todo con `metodo_pago`.
         `puede_cambiar_precios`: si es False, el precio de cada línea tiene
         que ser el de lista del producto (el quién vendió queda en `usuario_id`)."""
-        turno = self._turnos.get_abierto()
+        # Ventas simultáneas se registran de a una: el turno y el stock de los
+        # productos quedan tomados (FOR UPDATE) hasta que termina la venta.
+        turno = self._turnos.get_abierto(bloquear=True)
         if turno is None:
             raise TransicionDeEstadoInvalida("No hay un turno de caja abierto. Abrí caja antes de vender.")
         if not items:
             raise SolicitudInvalida("La venta debe tener al menos un ítem")
         validar_descuento(descuento, descuento_maximo)
+        self._productos.bloquear(i["producto_id"] for i in items)
 
         venta_items = []
         # Cantidad total pedida por producto: si un producto aparece en

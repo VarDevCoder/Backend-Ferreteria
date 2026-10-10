@@ -36,6 +36,7 @@ from app.infrastructure.db.models import (
     StockNoVendibleModel,
     UsuarioModel,
 )
+from app.infrastructure.db.tiempo_sql import anio_actual_sql
 
 # Lock transaccional para numerar reclamos sin duplicados entre requests simultáneos.
 _LOCK_NUMERO_RECLAMO = 7_301_956
@@ -277,7 +278,7 @@ class SqlAlchemyReclamoProveedorRepository:
         """RCL-AAAA-NNNN: el mayor número del año + 1, con un lock para que dos
         reclamos simultáneos no reciban el mismo."""
         self._session.execute(text("SELECT pg_advisory_xact_lock(:clave)"), {"clave": _LOCK_NUMERO_RECLAMO})
-        anio = int(self._session.execute(select(func.extract("year", func.current_date()))).scalar_one())
+        anio = int(self._session.execute(select(anio_actual_sql())).scalar_one())  # año en hora de Paraguay
         prefijo = f"RCL-{anio}-"
         ultimo = self._session.execute(
             select(func.max(cast(func.substr(ReclamoProveedorModel.numero, len(prefijo) + 1), Integer)))
