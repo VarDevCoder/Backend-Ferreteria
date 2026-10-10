@@ -6,7 +6,7 @@ seis tablas. `alembic check` lo marcaba como diferencia. Por las dudas se
 completa con la fecha actual cualquier fila vieja sin fecha antes de exigirla.
 
 Revision ID: bff0f60ca1c1
-Revises: a1b2c3d4e5f6
+Revises: efcd5ab831ef
 Create Date: 2026-10-10 12:54:34.567646
 
 """
@@ -17,7 +17,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = 'bff0f60ca1c1'
-down_revision: Union[str, Sequence[str], None] = 'a1b2c3d4e5f6'
+down_revision: Union[str, Sequence[str], None] = 'efcd5ab831ef'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
