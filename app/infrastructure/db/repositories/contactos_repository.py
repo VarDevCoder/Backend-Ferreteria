@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.domain.entities import Cliente, Proveedor, ProveedorProducto
 from app.infrastructure.db.models import (
     ClienteModel,
+    MovimientoCuentaCorrienteModel,
     OrdenCompraModel,
     PedidoClienteModel,
     ProveedorModel,
@@ -59,6 +60,7 @@ class SqlAlchemyClienteRepository:
         row.ciudad = cliente.ciudad
         row.activo = cliente.activo
         row.notas = cliente.notas
+        row.limite_credito = cliente.limite_credito
         self._session.flush()
         return self._to_entity(row)
 
@@ -69,8 +71,10 @@ class SqlAlchemyClienteRepository:
             self._session.flush()
 
     def tiene_pedidos(self, cliente_id: int) -> bool:
+        """Pedidos o cuenta corriente: en ambos casos el historial obliga a desactivarlo en vez de borrarlo."""
         stmt = select(PedidoClienteModel.id).where(PedidoClienteModel.cliente_id == cliente_id).limit(1)
-        return self._session.execute(stmt).first() is not None
+        cuenta = select(MovimientoCuentaCorrienteModel.id).where(MovimientoCuentaCorrienteModel.cliente_id == cliente_id).limit(1)
+        return self._session.execute(stmt).first() is not None or self._session.execute(cuenta).first() is not None
 
     def ciudades(self) -> list[str]:
         stmt = select(ClienteModel.ciudad).where(ClienteModel.ciudad.is_not(None)).distinct()
@@ -88,6 +92,7 @@ class SqlAlchemyClienteRepository:
             ciudad=row.ciudad,
             activo=row.activo,
             notas=row.notas,
+            limite_credito=row.limite_credito or 0,
         )
 
     @staticmethod
@@ -102,6 +107,7 @@ class SqlAlchemyClienteRepository:
             ciudad=cliente.ciudad,
             activo=cliente.activo,
             notas=cliente.notas,
+            limite_credito=cliente.limite_credito,
         )
 
 

@@ -21,6 +21,7 @@ from app.domain.enums import (
     MetodoPago,
     RolUsuario,
     TipoMovimientoCaja,
+    TipoMovimientoCuentaCorriente,
     TipoMovimientoInventario,
     TipoReferenciaMovimiento,
 )
@@ -114,6 +115,8 @@ class Cliente:
     ciudad: str | None = None
     activo: bool = True
     notas: str | None = None
+    # Límite de deuda en cuenta corriente ("a cuenta"). 0 = no puede comprar a cuenta.
+    limite_credito: int = 0
 
 
 @dataclass
@@ -431,6 +434,7 @@ class CajaTurno:
     total_ventas_efectivo: int = 0
     total_ventas_tarjeta: int = 0
     total_ventas_transferencia: int = 0
+    total_ventas_a_cuenta: int = 0
     conteo_fisico: int | None = None
     diferencia: int | None = None
     notas: str | None = None
@@ -468,6 +472,28 @@ class VentaMostradorItem:
 
 
 @dataclass
+class VentaPago:
+    metodo: MetodoPago
+    monto: int
+    referencia: str | None = None  # ej. últimos dígitos de la tarjeta, N° de cheque o de operación
+    id: int | None = None
+
+
+@dataclass
+class MovimientoCuentaCorriente:
+    id: int | None
+    cliente_id: int
+    tipo: TipoMovimientoCuentaCorriente
+    monto: int
+    venta_id: int | None = None
+    metodo_pago: MetodoPago | None = None
+    caja_turno_id: int | None = None
+    referencia: str | None = None
+    usuario_id: int | None = None
+    created_at: datetime | None = None
+
+
+@dataclass
 class VentaMostrador:
     id: int | None
     numero: str
@@ -481,6 +507,10 @@ class VentaMostrador:
     notas: str | None = None
     created_at: datetime | None = None
     items: list[VentaMostradorItem] = field(default_factory=list)
+    pagos: list[VentaPago] = field(default_factory=list)
+
+    def monto_a_cuenta(self) -> int:
+        return sum(p.monto for p in self.pagos if p.metodo == MetodoPago.CUENTA_CORRIENTE)
 
     def calcular_totales(self) -> None:
         self.subtotal = sum(item.calcular_subtotal() for item in self.items)

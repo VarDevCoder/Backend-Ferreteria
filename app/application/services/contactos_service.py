@@ -43,7 +43,7 @@ class ClienteService:
         self.obtener(cliente_id)
         if self._clientes.tiene_pedidos(cliente_id):
             raise SolicitudInvalida(
-                "No se puede eliminar el cliente porque tiene pedidos asociados. Desactívelo en su lugar."
+                "No se puede eliminar el cliente porque tiene pedidos o cuenta corriente. Desactívelo en su lugar."
             )
         self._clientes.delete(cliente_id)
 

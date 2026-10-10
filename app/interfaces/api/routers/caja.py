@@ -70,6 +70,7 @@ def registrar_venta(datos: VentaMostradorCreate, servicio: CajaSvc, usuario: Req
         usuario_id=usuario.id,
         items=[i.model_dump() for i in datos.items],
         metodo_pago=datos.metodo_pago,
+        pagos=[p.model_dump() for p in datos.pagos] if datos.pagos else None,
         cliente_id=datos.cliente_id,
         descuento=datos.descuento,
         notas=datos.notas,

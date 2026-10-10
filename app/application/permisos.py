@@ -63,6 +63,14 @@ def puede_cambiar_precio_de_venta(rol: RolUsuario) -> bool:
     return rol in PUEDEN_CAMBIAR_PRECIO_DE_VENTA
 
 
+# Quién decide cuánto puede deber un cliente (el límite de su cuenta corriente).
+PUEDEN_ASIGNAR_CREDITO = frozenset({A, E})
+
+
+def puede_asignar_credito(rol: RolUsuario) -> bool:
+    return rol in PUEDEN_ASIGNAR_CREDITO
+
+
 def puede_modificar(rol: RolUsuario, modulo: Modulo) -> bool:
     return rol in PUEDE_MODIFICAR[modulo]
 
@@ -79,4 +87,6 @@ def modulos_modificables(rol: RolUsuario) -> list[str]:
     permisos = [m.value for m in Modulo if puede_modificar(rol, m)]
     if puede_cambiar_precio_de_venta(rol):
         permisos.append("precios_venta")
+    if puede_asignar_credito(rol):
+        permisos.append("credito_clientes")
     return permisos

@@ -9,6 +9,7 @@ from app.infrastructure.db.models import (
     ProductoModel,
     VentaMostradorItemModel,
     VentaMostradorModel,
+    VentaPagoModel,
 )
 
 
@@ -23,10 +24,14 @@ class SqlAlchemyReporteRepository:
 
     def ventas_por_metodo(self, desde: date, hasta: date) -> list[dict]:
         inicio, fin = _rango(desde, hasta)
+        # Por cada pago, no por venta: una venta mixta suma a cada medio lo
+        # que se cobró con él. La cantidad es de ventas en que se usó el medio.
         stmt = (
-            select(VentaMostradorModel.metodo_pago, func.count(), func.coalesce(func.sum(VentaMostradorModel.total), 0))
+            select(VentaPagoModel.metodo, func.count(func.distinct(VentaPagoModel.venta_id)), func.coalesce(func.sum(VentaPagoModel.monto), 0))
+            .join(VentaMostradorModel, VentaMostradorModel.id == VentaPagoModel.venta_id)
             .where(VentaMostradorModel.created_at >= inicio, VentaMostradorModel.created_at < fin)
-            .group_by(VentaMostradorModel.metodo_pago)
+            .group_by(VentaPagoModel.metodo)
+            .order_by(func.sum(VentaPagoModel.monto).desc())
         )
         return [{"metodo_pago": m, "cantidad": c, "total": int(t)} for m, c, t in self._session.execute(stmt)]
 

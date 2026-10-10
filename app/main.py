@@ -25,6 +25,7 @@ from app.interfaces.api.routers import (
     caja,
     catalogo,
     contactos,
+    cuenta_corriente,
     dashboard,
     empresa,
     inventario,
@@ -91,6 +92,7 @@ app.include_router(empresa.router, prefix=API)
 # Operación
 app.include_router(dashboard.router, prefix=API, dependencies=_protegido())
 app.include_router(caja.router, prefix=API, dependencies=_protegido(Modulo.CAJA))
+app.include_router(cuenta_corriente.router, prefix=API, dependencies=_protegido(Modulo.CAJA))  # cobrar deudas es tarea de caja
 app.include_router(catalogo.router, prefix=API, dependencies=_protegido(Modulo.CATALOGO))
 app.include_router(contactos.router, prefix=API, dependencies=_protegido())  # permisos por ruta (clientes / proveedores)
 app.include_router(pedidos_cliente.router, prefix=API, dependencies=_protegido(Modulo.PEDIDOS))

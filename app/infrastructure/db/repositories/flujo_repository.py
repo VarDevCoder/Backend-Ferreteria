@@ -24,6 +24,7 @@ from app.domain.entities import (
     SolicitudPresupuestoItem,
     VentaMostrador,
     VentaMostradorItem,
+    VentaPago,
 )
 from app.domain.enums import (
     EstadoCajaTurno,
@@ -50,6 +51,7 @@ from app.infrastructure.db.models import (
     SolicitudPresupuestoModel,
     VentaMostradorItemModel,
     VentaMostradorModel,
+    VentaPagoModel,
 )
 
 
@@ -709,13 +711,19 @@ class SqlAlchemyCajaTurnoRepository:
         )
 
     def acumular_venta(self, turno_id: int, metodo_pago: str, monto: int) -> None:
+        """Suma un pago a los totales del turno: efectivo (entra al arqueo),
+        tarjetas (débito + crédito), otros medios electrónicos (transferencia,
+        QR, cheque) y ventas a cuenta (deuda del cliente, no es dinero)."""
         row = self._session.get(CajaTurnoModel, turno_id)
         if row is None:
             raise ValueError(f"CajaTurno {turno_id} no existe")
-        if metodo_pago == MetodoPago.EFECTIVO:
+        metodo = MetodoPago(metodo_pago)
+        if metodo == MetodoPago.EFECTIVO:
             row.total_ventas_efectivo += monto
-        elif metodo_pago == MetodoPago.TARJETA:
+        elif metodo.es_tarjeta():
             row.total_ventas_tarjeta += monto
+        elif metodo == MetodoPago.CUENTA_CORRIENTE:
+            row.total_ventas_a_cuenta = (row.total_ventas_a_cuenta or 0) + monto
         else:
             row.total_ventas_transferencia += monto
         self._session.flush()
@@ -732,6 +740,7 @@ class SqlAlchemyCajaTurnoRepository:
             total_ventas_efectivo=row.total_ventas_efectivo,
             total_ventas_tarjeta=row.total_ventas_tarjeta,
             total_ventas_transferencia=row.total_ventas_transferencia,
+            total_ventas_a_cuenta=row.total_ventas_a_cuenta or 0,
             conteo_fisico=row.conteo_fisico,
             diferencia=row.diferencia,
             notas=row.notas,
@@ -752,7 +761,7 @@ class SqlAlchemyVentaMostradorRepository:
     def list(self, caja_turno_id: int | None = None, limit: int | None = None) -> list[VentaMostrador]:
         stmt = (
             select(VentaMostradorModel)
-            .options(selectinload(VentaMostradorModel.items))
+            .options(selectinload(VentaMostradorModel.items), selectinload(VentaMostradorModel.pagos))
             .order_by(VentaMostradorModel.created_at.desc())
         )
         if caja_turno_id is not None:
@@ -763,7 +772,9 @@ class SqlAlchemyVentaMostradorRepository:
         return [self._to_entity(r) for r in rows]
 
     def get_by_id(self, venta_id: int) -> VentaMostrador | None:
-        row = self._session.get(VentaMostradorModel, venta_id, options=[selectinload(VentaMostradorModel.items)])
+        row = self._session.get(
+            VentaMostradorModel, venta_id, options=[selectinload(VentaMostradorModel.items), selectinload(VentaMostradorModel.pagos)]
+        )
         return self._to_entity(row) if row else None
 
     def add(self, venta: VentaMostrador) -> VentaMostrador:
@@ -784,6 +795,7 @@ class SqlAlchemyVentaMostradorRepository:
                 )
                 for i in venta.items
             ],
+            pagos=[VentaPagoModel(metodo=p.metodo.value, monto=p.monto, referencia=p.referencia) for p in venta.pagos],
         )
         self._session.add(row)
         self._session.flush()
@@ -829,5 +841,9 @@ class SqlAlchemyVentaMostradorRepository:
                     precio_unitario=i.precio_unitario, subtotal=i.subtotal,
                 )
                 for i in row.items
+            ],
+            pagos=[
+                VentaPago(id=p.id, metodo=MetodoPago(p.metodo), monto=p.monto, referencia=p.referencia)
+                for p in sorted(row.pagos, key=lambda p: p.id or 0)
             ],
         )

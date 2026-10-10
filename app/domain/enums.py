@@ -94,9 +94,32 @@ class EstadoCajaTurno(StrEnum):
 
 
 class MetodoPago(StrEnum):
+    """Medios de pago de una venta. Una venta puede combinar varios (pago
+    mixto); en ese caso la venta figura como MIXTO y el detalle está en sus
+    pagos."""
+
     EFECTIVO = "EFECTIVO"
-    TARJETA = "TARJETA"
+    TARJETA_DEBITO = "TARJETA_DEBITO"
+    TARJETA_CREDITO = "TARJETA_CREDITO"
     TRANSFERENCIA = "TRANSFERENCIA"
+    QR = "QR"                          # QR / billetera electrónica
+    CHEQUE = "CHEQUE"
+    CUENTA_CORRIENTE = "CUENTA_CORRIENTE"  # "a cuenta": queda como deuda del cliente
+    MIXTO = "MIXTO"                    # solo como resumen de una venta con varios pagos
+    TARJETA = "TARJETA"                # histórico: ventas anteriores a separar débito/crédito
+
+    @classmethod
+    def para_cobrar(cls) -> tuple["MetodoPago", ...]:
+        """Medios que se pueden elegir al cobrar (excluye MIXTO y el histórico)."""
+        return (cls.EFECTIVO, cls.TARJETA_DEBITO, cls.TARJETA_CREDITO, cls.TRANSFERENCIA, cls.QR, cls.CHEQUE, cls.CUENTA_CORRIENTE)
+
+    def es_tarjeta(self) -> bool:
+        return self in (MetodoPago.TARJETA, MetodoPago.TARJETA_DEBITO, MetodoPago.TARJETA_CREDITO)
+
+
+class TipoMovimientoCuentaCorriente(StrEnum):
+    CARGO = "CARGO"  # venta a cuenta: aumenta la deuda del cliente
+    PAGO = "PAGO"    # cobro: la reduce
 
 
 class TipoMovimientoCaja(StrEnum):

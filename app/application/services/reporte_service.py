@@ -20,8 +20,10 @@ class ReporteService:
             raise SolicitudInvalida(f"El período no puede superar {MAX_DIAS} días")
 
         por_metodo = self._reportes.ventas_por_metodo(desde, hasta)
-        cantidad = sum(m["cantidad"] for m in por_metodo)
-        total = sum(m["total"] for m in por_metodo)
+        por_dia = self._reportes.ventas_por_dia(desde, hasta)
+        # Las ventas se cuentan por día: por medio de pago, una venta mixta aparece en más de un medio.
+        cantidad = sum(d["cantidad"] for d in por_dia)
+        total = sum(d["total"] for d in por_dia)
         productos = self._reportes.productos_mas_vendidos(desde, hasta, limite_productos)
         return {
             "desde": desde,
@@ -32,7 +34,7 @@ class ReporteService:
                 "ticket_promedio": int(round(total / cantidad)) if cantidad else 0,
             },
             "por_metodo_pago": por_metodo,
-            "por_dia": self._reportes.ventas_por_dia(desde, hasta),
+            "por_dia": por_dia,
             "productos_mas_vendidos": productos,
             "pedidos_entregados": self._reportes.pedidos_entregados(desde, hasta),
         }

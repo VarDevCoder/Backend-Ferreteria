@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 
 from app.domain.entities import OrdenCompra, OrdenEnvio, PedidoCliente, SolicitudPresupuesto
 from app.domain.repositories import (
+    CuentaCorrienteRepository,
     OrdenCompraRepository,
     OrdenEnvioRepository,
     PedidoClienteRepository,
@@ -22,6 +23,7 @@ class DashboardStats:
     ordenes_envio_pendientes: int = 0
     productos_total: int = 0
     productos_stock_bajo: int = 0
+    por_cobrar: int = 0  # deuda total de clientes en cuenta corriente
 
 
 @dataclass
@@ -43,7 +45,9 @@ class DashboardService:
         ordenes_envio: OrdenEnvioRepository,
         productos: ProductoRepository,
         proveedores: ProveedorRepository,
+        cuentas: CuentaCorrienteRepository | None = None,
     ):
+        self._cuentas = cuentas
         self._proveedores = proveedores
         self._pedidos = pedidos
         self._solicitudes = solicitudes
@@ -62,6 +66,7 @@ class DashboardService:
             ordenes_envio_pendientes=self._ordenes_envio.contar_pendientes(),
             productos_total=len(productos_activos),
             productos_stock_bajo=sum(1 for p in productos_activos if p.tiene_stock_bajo()),
+            por_cobrar=self._cuentas.saldo_total() if self._cuentas else 0,
         )
 
     def actividad_reciente(self, limite: int = 15) -> list[ActividadReciente]:

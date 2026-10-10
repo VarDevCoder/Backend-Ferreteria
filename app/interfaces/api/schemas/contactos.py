@@ -9,6 +9,9 @@ class ClienteCreate(BaseModel):
     direccion: str | None = None
     ciudad: str | None = None
     notas: str | None = None
+    limite_credito: int | None = Field(
+        default=None, ge=0, description="Tope de deuda en Gs. (0 = no compra a cuenta). Solo admin/encargado. Sin enviar, no cambia."
+    )
 
 
 class ClienteUpdate(ClienteCreate):
@@ -25,6 +28,8 @@ class ClienteResponse(BaseModel):
     ciudad: str | None
     activo: bool
     notas: str | None
+    limite_credito: int = 0
+    saldo: int = 0
 
 
 class ProveedorCreate(BaseModel):

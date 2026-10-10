@@ -3,13 +3,16 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends
 
-from app.application.permisos import Modulo
+from app.application.permisos import Modulo, puede_asignar_credito
 from app.application.services.contactos_service import ClienteService, ProveedorProductoService, ProveedorService
-from app.domain.entities import Proveedor
+from app.application.services.cuenta_corriente_service import CuentaCorrienteService
+from app.domain.entities import Cliente, Proveedor, Usuario
+from app.domain.exceptions import PermisoDenegado
 from app.interfaces.api.deps import (
     CurrentUser,
     RequireAnkorUser,
     get_cliente_service,
+    get_cuenta_corriente_service,
     get_proveedor_producto_service,
     get_proveedor_service,
     requiere_modulo,
@@ -37,6 +40,22 @@ _PERMISO_PROVEEDORES = [Depends(requiere_modulo(Modulo.PROVEEDORES))]
 ClienteSvc = Annotated[ClienteService, Depends(get_cliente_service)]
 ProveedorSvc = Annotated[ProveedorService, Depends(get_proveedor_service)]
 ProveedorProductoSvc = Annotated[ProveedorProductoService, Depends(get_proveedor_producto_service)]
+CuentaSvc = Annotated[CuentaCorrienteService, Depends(get_cuenta_corriente_service)]
+
+
+def _cliente_response(c: Cliente, saldo: int = 0) -> ClienteResponse:
+    return ClienteResponse(**vars(c), saldo=saldo)
+
+
+def _datos_cliente(datos: ClienteCreate, usuario: Usuario, limite_actual: int = 0) -> dict:
+    """El límite de crédito solo lo cambia admin/encargado; sin enviarlo, no cambia."""
+    valores = datos.model_dump()
+    limite = valores.pop("limite_credito")
+    if limite is not None and limite != limite_actual:
+        if not puede_asignar_credito(usuario.rol):
+            raise PermisoDenegado("Solo un administrador o encargado puede asignar el límite de crédito")
+        valores["limite_credito"] = limite
+    return valores
 
 
 def _proveedor_response(p: Proveedor) -> ProveedorResponse:
@@ -49,8 +68,11 @@ def _proveedor_response(p: Proveedor) -> ProveedorResponse:
 # --- Clientes ---------------------------------------------------------------------
 
 @router.get("/clientes", dependencies=_PERMISO_CLIENTES, response_model=list[ClienteResponse])
-def listar_clientes(servicio: ClienteSvc, busqueda: str | None = None, activo: bool | None = None, ciudad: str | None = None) -> list[ClienteResponse]:
-    return [ClienteResponse(**vars(c)) for c in servicio.listar(busqueda, activo, ciudad)]
+def listar_clientes(
+    servicio: ClienteSvc, cuentas: CuentaSvc, busqueda: str | None = None, activo: bool | None = None, ciudad: str | None = None
+) -> list[ClienteResponse]:
+    saldos = cuentas.saldos()
+    return [_cliente_response(c, saldos.get(c.id, 0)) for c in servicio.listar(busqueda, activo, ciudad)]
 
 
 @router.get("/clientes/ciudades", dependencies=_PERMISO_CLIENTES, response_model=list[str])
@@ -59,18 +81,22 @@ def ciudades_de_clientes(servicio: ClienteSvc) -> list[str]:
 
 
 @router.get("/clientes/{cliente_id}", dependencies=_PERMISO_CLIENTES, response_model=ClienteResponse)
-def obtener_cliente(cliente_id: int, servicio: ClienteSvc) -> ClienteResponse:
-    return ClienteResponse(**vars(servicio.obtener(cliente_id)))
+def obtener_cliente(cliente_id: int, servicio: ClienteSvc, cuentas: CuentaSvc) -> ClienteResponse:
+    return _cliente_response(servicio.obtener(cliente_id), cuentas.saldos().get(cliente_id, 0))
 
 
 @router.post("/clientes", dependencies=_PERMISO_CLIENTES, response_model=ClienteResponse, status_code=201)
-def crear_cliente(datos: ClienteCreate, servicio: ClienteSvc, _usuario: RequireAnkorUser) -> ClienteResponse:
-    return ClienteResponse(**vars(servicio.crear(**datos.model_dump())))
+def crear_cliente(datos: ClienteCreate, servicio: ClienteSvc, usuario: RequireAnkorUser) -> ClienteResponse:
+    return _cliente_response(servicio.crear(**_datos_cliente(datos, usuario)))
 
 
 @router.put("/clientes/{cliente_id}", dependencies=_PERMISO_CLIENTES, response_model=ClienteResponse)
-def actualizar_cliente(cliente_id: int, datos: ClienteUpdate, servicio: ClienteSvc, _usuario: RequireAnkorUser) -> ClienteResponse:
-    return ClienteResponse(**vars(servicio.actualizar(cliente_id, **datos.model_dump())))
+def actualizar_cliente(
+    cliente_id: int, datos: ClienteUpdate, servicio: ClienteSvc, cuentas: CuentaSvc, usuario: RequireAnkorUser
+) -> ClienteResponse:
+    actual = servicio.obtener(cliente_id)
+    cliente = servicio.actualizar(cliente_id, **_datos_cliente(datos, usuario, actual.limite_credito))
+    return _cliente_response(cliente, cuentas.saldos().get(cliente_id, 0))
 
 
 @router.delete("/clientes/{cliente_id}", dependencies=_PERMISO_CLIENTES, response_model=Mensaje)
@@ -80,8 +106,8 @@ def eliminar_cliente(cliente_id: int, servicio: ClienteSvc, _usuario: RequireAnk
 
 
 @router.post("/clientes/{cliente_id}/toggle-activo", dependencies=_PERMISO_CLIENTES, response_model=ClienteResponse)
-def toggle_activo_cliente(cliente_id: int, servicio: ClienteSvc, _usuario: RequireAnkorUser) -> ClienteResponse:
-    return ClienteResponse(**vars(servicio.toggle_activo(cliente_id)))
+def toggle_activo_cliente(cliente_id: int, servicio: ClienteSvc, cuentas: CuentaSvc, _usuario: RequireAnkorUser) -> ClienteResponse:
+    return _cliente_response(servicio.toggle_activo(cliente_id), cuentas.saldos().get(cliente_id, 0))
 
 
 # --- Proveedores ---------------------------------------------------------------------

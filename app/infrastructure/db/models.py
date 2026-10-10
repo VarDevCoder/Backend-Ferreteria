@@ -111,6 +111,7 @@ class ClienteModel(Base):
     ciudad: Mapped[str | None] = mapped_column(String(100), nullable=True)
     activo: Mapped[bool] = mapped_column(Boolean, default=True)
     notas: Mapped[str | None] = mapped_column(Text, nullable=True)
+    limite_credito: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
 
 class ProveedorModel(Base):
@@ -336,6 +337,7 @@ class CajaTurnoModel(Base):
     total_ventas_efectivo: Mapped[int] = mapped_column(Integer, default=0)
     total_ventas_tarjeta: Mapped[int] = mapped_column(Integer, default=0)
     total_ventas_transferencia: Mapped[int] = mapped_column(Integer, default=0)
+    total_ventas_a_cuenta: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     conteo_fisico: Mapped[int | None] = mapped_column(Integer, nullable=True)
     diferencia: Mapped[int | None] = mapped_column(Integer, nullable=True)
     notas: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -377,6 +379,38 @@ class VentaMostradorModel(Base):
     items: Mapped[list["VentaMostradorItemModel"]] = relationship(
         back_populates="venta", cascade="all, delete-orphan"
     )
+    pagos: Mapped[list["VentaPagoModel"]] = relationship(back_populates="venta", cascade="all, delete-orphan")
+
+
+class VentaPagoModel(Base):
+    """Cada medio con que se cobró una venta (una venta mixta tiene varios)."""
+
+    __tablename__ = "venta_pagos"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    venta_id: Mapped[int] = mapped_column(ForeignKey("ventas_mostrador.id", ondelete="CASCADE"), index=True)
+    metodo: Mapped[str] = mapped_column(String(20))
+    monto: Mapped[int] = mapped_column(Integer)
+    referencia: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
+    venta: Mapped["VentaMostradorModel"] = relationship(back_populates="pagos")
+
+
+class MovimientoCuentaCorrienteModel(Base):
+    """Libro de la cuenta corriente de un cliente: cargos (ventas a cuenta) y pagos."""
+
+    __tablename__ = "movimientos_cuenta_corriente"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    cliente_id: Mapped[int] = mapped_column(ForeignKey("clientes.id", ondelete="RESTRICT"), index=True)
+    tipo: Mapped[str] = mapped_column(String(10))
+    monto: Mapped[int] = mapped_column(Integer)
+    venta_id: Mapped[int | None] = mapped_column(ForeignKey("ventas_mostrador.id", ondelete="SET NULL"), nullable=True)
+    metodo_pago: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    caja_turno_id: Mapped[int | None] = mapped_column(ForeignKey("caja_turnos.id", ondelete="SET NULL"), nullable=True)
+    referencia: Mapped[str | None] = mapped_column(Text, nullable=True)
+    usuario_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
 
 
 class VentaMostradorItemModel(Base):

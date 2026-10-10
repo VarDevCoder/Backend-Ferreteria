@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from app.application.services.caja_service import CajaService
 from app.application.services.catalogo_service import CategoriaService, ProductoService
 from app.application.services.contactos_service import ClienteService, ProveedorProductoService, ProveedorService
+from app.application.services.cuenta_corriente_service import CuentaCorrienteService
 from app.application.permisos import Modulo, puede_leer, puede_modificar
 from app.application.services.dashboard_service import DashboardService
 from app.application.services.empresa_service import EmpresaService
@@ -37,6 +38,7 @@ from app.infrastructure.db.repositories.contactos_repository import (
     SqlAlchemyProveedorProductoRepository,
     SqlAlchemyProveedorRepository,
 )
+from app.infrastructure.db.repositories.cuenta_corriente_repository import SqlAlchemyCuentaCorrienteRepository
 from app.infrastructure.db.repositories.flujo_repository import (
     SqlAlchemyCajaTurnoRepository,
     SqlAlchemyMovimientoInventarioRepository,
@@ -114,6 +116,10 @@ def get_venta_mostrador_repo(db: DbSession) -> SqlAlchemyVentaMostradorRepositor
     return SqlAlchemyVentaMostradorRepository(db)
 
 
+def get_cuenta_corriente_repo(db: DbSession) -> SqlAlchemyCuentaCorrienteRepository:
+    return SqlAlchemyCuentaCorrienteRepository(db)
+
+
 # --- Servicios (casos de uso) ----------------------------------------------------
 
 def get_categoria_service(repo: Annotated[SqlAlchemyCategoriaRepository, Depends(get_categoria_repo)]) -> CategoriaService:
@@ -188,13 +194,22 @@ def get_inventario_service(
     return InventarioService(productos, movimientos)
 
 
+def get_cuenta_corriente_service(
+    cuentas: Annotated[SqlAlchemyCuentaCorrienteRepository, Depends(get_cuenta_corriente_repo)],
+    clientes: Annotated[SqlAlchemyClienteRepository, Depends(get_cliente_repo)],
+    turnos: Annotated[SqlAlchemyCajaTurnoRepository, Depends(get_caja_turno_repo)],
+) -> CuentaCorrienteService:
+    return CuentaCorrienteService(cuentas, clientes, turnos)
+
+
 def get_caja_service(
     turnos: Annotated[SqlAlchemyCajaTurnoRepository, Depends(get_caja_turno_repo)],
     ventas: Annotated[SqlAlchemyVentaMostradorRepository, Depends(get_venta_mostrador_repo)],
     productos: Annotated[SqlAlchemyProductoRepository, Depends(get_producto_repo)],
     movimientos: Annotated[SqlAlchemyMovimientoInventarioRepository, Depends(get_movimiento_repo)],
+    cuenta_corriente: Annotated[CuentaCorrienteService, Depends(get_cuenta_corriente_service)],
 ) -> CajaService:
-    return CajaService(turnos, ventas, productos, movimientos)
+    return CajaService(turnos, ventas, productos, movimientos, cuenta_corriente)
 
 
 def get_dashboard_service(
@@ -204,8 +219,9 @@ def get_dashboard_service(
     ordenes_envio: Annotated[SqlAlchemyOrdenEnvioRepository, Depends(get_orden_envio_repo)],
     productos: Annotated[SqlAlchemyProductoRepository, Depends(get_producto_repo)],
     proveedores: Annotated[SqlAlchemyProveedorRepository, Depends(get_proveedor_repo)],
+    cuentas: Annotated[SqlAlchemyCuentaCorrienteRepository, Depends(get_cuenta_corriente_repo)],
 ) -> DashboardService:
-    return DashboardService(pedidos, solicitudes, ordenes_compra, ordenes_envio, productos, proveedores)
+    return DashboardService(pedidos, solicitudes, ordenes_compra, ordenes_envio, productos, proveedores, cuentas)
 
 
 def get_usuario_service(usuarios: Annotated[SqlAlchemyUsuarioRepository, Depends(get_usuario_repo)]) -> UsuarioService:

@@ -12,6 +12,7 @@ class DashboardStatsResponse(BaseModel):
     ordenes_envio_pendientes: int
     productos_total: int
     productos_stock_bajo: int
+    por_cobrar: int = 0
 
 
 class ActividadRecienteResponse(BaseModel):

@@ -42,7 +42,7 @@ from app.infrastructure.db.repositories.flujo_repository import (
     SqlAlchemySolicitudPresupuestoRepository,
 )
 from app.application.services.orden_envio_service import OrdenEnvioService
-from app.infrastructure.db.demo_historial import generar_historial
+from app.infrastructure.db.demo_historial import completar_medios_de_pago, generar_historial
 from app.infrastructure.db.repositories.empresa_repository import SqlAlchemyEmpresaRepository
 from app.infrastructure.db.repositories.usuario_repository import SqlAlchemyUsuarioRepository
 from app.infrastructure.db.session import SessionLocal, engine
@@ -222,6 +222,10 @@ def main() -> None:
         db.commit()
         if ventas:
             print(f"Historial de demo: {ventas} ventas de mostrador")
+        a_cuenta = completar_medios_de_pago(db, usuario_id=demo_user.id)
+        db.commit()
+        if a_cuenta:
+            print(f"Cuenta corriente de demo: {a_cuenta} ventas a cuenta")
 
         # Pedidos de clientes en distintas etapas (uno entregado y uno listo para enviar, desde stock).
         if len(pedidos_repo.list()) < 3:

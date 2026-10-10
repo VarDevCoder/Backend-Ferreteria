@@ -7,8 +7,10 @@ operación creíble de una ferretería:
   algún retiro de efectivo y arqueo al cierre (casi siempre exacto, a veces
   con una diferencia chica, como pasa en la realidad);
 - ventas de mostrador repartidas en el horario comercial, con productos de
-  rotación alta más frecuentes, efectivo/tarjeta/transferencia y, a veces,
-  cliente registrado o descuento;
+  rotación alta más frecuentes, efectivo, tarjeta de débito o crédito,
+  transferencia o QR y, a veces, cliente registrado o descuento;
+- clientes con cuenta corriente: ventas a cuenta (todo o una parte), cobros
+  posteriores y deudas de distinta antigüedad (ver `completar_medios_de_pago`);
 - stock coherente: el inventario inicial alcanza para lo vendido y el kardex
   registra cada salida; algunos productos terminan bajo el mínimo, para que
   la demo muestre las alertas de reposición;
@@ -32,15 +34,29 @@ from app.infrastructure.db.models import (
     CajaTurnoModel,
     ClienteModel,
     MovimientoCajaModel,
+    MovimientoCuentaCorrienteModel,
     MovimientoInventarioModel,
     ProductoModel,
     VentaMostradorItemModel,
     VentaMostradorModel,
+    VentaPagoModel,
 )
 
 DIAS_DE_HISTORIAL = 42
 FONDO_INICIAL = 300_000
-MEDIOS_DE_PAGO = [("EFECTIVO", 55), ("TARJETA", 30), ("TRANSFERENCIA", 15)]
+MEDIOS_DE_PAGO = [("EFECTIVO", 52), ("TARJETA_DEBITO", 18), ("TARJETA_CREDITO", 12), ("TRANSFERENCIA", 12), ("QR", 6)]
+NO_EFECTIVO = ("TARJETA", "TARJETA_DEBITO", "TARJETA_CREDITO", "TRANSFERENCIA", "QR")
+
+
+def _campo_del_turno(metodo: str) -> str:
+    """En qué total del turno se acumula cada medio (igual que `acumular_venta`)."""
+    if metodo == "EFECTIVO":
+        return "total_ventas_efectivo"
+    if metodo.startswith("TARJETA"):
+        return "total_ventas_tarjeta"
+    if metodo == "CUENTA_CORRIENTE":
+        return "total_ventas_a_cuenta"
+    return "total_ventas_transferencia"
 
 
 def hay_historial(db: Session) -> bool:
@@ -152,7 +168,7 @@ def generar_historial(db: Session, usuario_id: int, vendedor_id: int | None = No
                 turno = CajaTurnoModel(
                     usuario_id=vendedor_id, fondo_inicial=FONDO_INICIAL, estado="ABIERTO",
                     fecha_apertura=datetime.combine(dia, time(7, 25)) if dia != hoy else min(momento, ahora) - timedelta(minutes=20),
-                    total_ventas_efectivo=0, total_ventas_tarjeta=0, total_ventas_transferencia=0,
+                    total_ventas_efectivo=0, total_ventas_tarjeta=0, total_ventas_transferencia=0, total_ventas_a_cuenta=0,
                 )
                 db.add(turno)
                 db.flush()
@@ -168,6 +184,7 @@ def generar_historial(db: Session, usuario_id: int, vendedor_id: int | None = No
             VentaMostradorItemModel(producto_id=p.id, cantidad=cantidad, precio_unitario=int(p.precio_venta), subtotal=int(p.precio_venta) * cantidad)
             for p, cantidad in items
         ]
+        venta.pagos = [VentaPagoModel(metodo=metodo, monto=total)]
         db.add(venta)
         db.flush()
         for p, cantidad in items:
@@ -178,7 +195,7 @@ def generar_historial(db: Session, usuario_id: int, vendedor_id: int | None = No
                 referencia_tipo="VENTA_MOSTRADOR", referencia_id=venta.id, usuario_id=vendedor_id,
                 observaciones="Venta de mostrador", created_at=momento,
             ))
-        campo = {"EFECTIVO": "total_ventas_efectivo", "TARJETA": "total_ventas_tarjeta", "TRANSFERENCIA": "total_ventas_transferencia"}[metodo]
+        campo = _campo_del_turno(metodo)
         setattr(turno, campo, (getattr(turno, campo) or 0) + total)
         creadas += 1
 
@@ -216,5 +233,118 @@ def generar_historial(db: Session, usuario_id: int, vendedor_id: int | None = No
             FROM ventas_mostrador
         ) n
         WHERE v.id = n.id
+    """))
+    return creadas
+
+
+# --- Medios de pago y cuenta corriente --------------------------------------------
+
+# (nombre del cliente, límite de crédito). Los que no estén en la base se ignoran.
+CLIENTES_CON_CREDITO = [
+    ("Constructora Mbaretê S.R.L.", 8_000_000),
+    ("Electricista Ramón Ortiz", 2_500_000),
+    ("Juan Benítez", 1_500_000),
+]
+
+
+def _cambiar_pagos(venta: VentaMostradorModel, turno: CajaTurnoModel, pagos: list[tuple[str, int]]) -> None:
+    """Reemplaza los pagos de una venta y corrige los totales del turno.
+    Solo se usa con ventas no cobradas en efectivo: el arqueo no cambia."""
+    for p in venta.pagos:
+        campo = _campo_del_turno(p.metodo)
+        setattr(turno, campo, (getattr(turno, campo) or 0) - p.monto)
+    venta.pagos = [VentaPagoModel(metodo=m, monto=monto) for m, monto in pagos]
+    for m, monto in pagos:
+        campo = _campo_del_turno(m)
+        setattr(turno, campo, (getattr(turno, campo) or 0) + monto)
+    venta.metodo_pago = pagos[0][0] if len(pagos) == 1 else "MIXTO"
+
+
+def completar_medios_de_pago(db: Session, usuario_id: int, semilla: int = 2026) -> int:
+    """Lleva el historial de la demo a los medios de pago actuales.
+
+    Sirve tanto para una base nueva como para la demo que ya tenía ventas:
+    - las ventas con la "TARJETA" genérica pasan a débito o crédito;
+    - algunas ventas con tarjeta se pagan en parte por QR o transferencia (pago mixto);
+    - algunos clientes reciben límite de crédito y compran a cuenta, con
+      cobros posteriores, así hay deudas al día y otras atrasadas.
+    Solo toca ventas no cobradas en efectivo, así los arqueos siguen cerrando.
+    Corre una sola vez: si ya hay movimientos de cuenta corriente, no hace nada.
+    Devuelve cuántas ventas a cuenta generó.
+    """
+    if db.execute(select(func.count()).select_from(MovimientoCuentaCorrienteModel)).scalar_one():
+        return 0
+    rng = random.Random(semilla + 1)
+    ahora: datetime = db.execute(select(func.now())).scalar_one().replace(tzinfo=None)
+
+    ventas = db.execute(
+        select(VentaMostradorModel).where(VentaMostradorModel.metodo_pago.in_(NO_EFECTIVO)).order_by(VentaMostradorModel.created_at)
+    ).scalars().all()
+    turnos = {t.id: t for t in db.execute(select(CajaTurnoModel)).scalars()}
+
+    # 1) Tarjeta genérica -> débito / crédito.
+    for venta in ventas:
+        if venta.metodo_pago == "TARJETA":
+            _cambiar_pagos(venta, turnos[venta.caja_turno_id], [(rng.choice(["TARJETA_DEBITO"] * 3 + ["TARJETA_CREDITO"] * 2), venta.total)])
+
+    # 2) Clientes con crédito.
+    nombres = dict(CLIENTES_CON_CREDITO)
+    clientes = [c for c in db.execute(select(ClienteModel).where(ClienteModel.nombre.in_(nombres))).scalars()]
+    for c in clientes:
+        c.limite_credito = nombres[c.nombre]
+
+    # 3) Ventas a cuenta (completas o con entrega) y cobros posteriores.
+    saldos = {c.id: 0 for c in clientes}
+    cobros: list[tuple[datetime, ClienteModel, int]] = []
+    creadas = 0
+    candidatas = [v for v in ventas if 80_000 <= v.total <= 2_500_000]
+    for venta in candidatas:
+        if not clientes or rng.random() > 0.12:
+            continue
+        # Cobros ya ocurridos antes de esta venta.
+        for fecha, cliente, monto in [c for c in cobros if c[0] <= venta.created_at]:
+            saldos[cliente.id] -= monto
+            cobros.remove((fecha, cliente, monto))
+            db.add(MovimientoCuentaCorrienteModel(
+                cliente_id=cliente.id, tipo="PAGO", monto=monto, metodo_pago="TRANSFERENCIA",
+                referencia="Transferencia bancaria", usuario_id=usuario_id, created_at=fecha,
+            ))
+        cliente = rng.choice(clientes)
+        entrega = (venta.total // 3 // 1000) * 1000 if rng.random() < 0.4 else 0
+        a_cuenta = venta.total - entrega
+        if saldos[cliente.id] + a_cuenta > cliente.limite_credito:
+            continue
+        metodo_entrega = venta.pagos[0].metodo if venta.pagos else "TRANSFERENCIA"
+        pagos = ([(metodo_entrega, entrega)] if entrega else []) + [("CUENTA_CORRIENTE", a_cuenta)]
+        _cambiar_pagos(venta, turnos[venta.caja_turno_id], pagos)
+        venta.cliente_id = cliente.id
+        saldos[cliente.id] += a_cuenta
+        db.add(MovimientoCuentaCorrienteModel(
+            cliente_id=cliente.id, tipo="CARGO", monto=a_cuenta, venta_id=venta.id, caja_turno_id=venta.caja_turno_id,
+            referencia="Venta (a cuenta)", usuario_id=venta.usuario_id, created_at=venta.created_at,
+        ))
+        creadas += 1
+        # La mayoría paga a las 1-3 semanas; algunos dejan la deuda.
+        fecha_cobro = venta.created_at + timedelta(days=rng.randint(7, 21), hours=rng.randint(0, 5))
+        if rng.random() < 0.65 and fecha_cobro < ahora:
+            parte = a_cuenta if rng.random() < 0.7 else (a_cuenta // 2 // 1000) * 1000
+            cobros.append((fecha_cobro, cliente, parte))
+    for fecha, cliente, monto in cobros:
+        db.add(MovimientoCuentaCorrienteModel(
+            cliente_id=cliente.id, tipo="PAGO", monto=monto, metodo_pago="TRANSFERENCIA",
+            referencia="Transferencia bancaria", usuario_id=usuario_id, created_at=fecha,
+        ))
+
+    # 4) Algunos pagos mixtos: parte con tarjeta y parte por QR o transferencia.
+    for venta in ventas:
+        if len(venta.pagos) == 1 and venta.pagos[0].metodo.startswith("TARJETA") and venta.total >= 100_000 and rng.random() < 0.15:
+            otra = (venta.total * rng.choice([3, 4, 5]) // 10 // 1000) * 1000
+            _cambiar_pagos(venta, turnos[venta.caja_turno_id], [(venta.pagos[0].metodo, venta.total - otra), (rng.choice(["QR", "TRANSFERENCIA"]), otra)])
+
+    # Las referencias de los cargos llevan el número de la venta.
+    db.flush()
+    db.execute(text("""
+        UPDATE movimientos_cuenta_corriente m SET referencia = 'Venta ' || v.numero
+        FROM ventas_mostrador v WHERE m.venta_id = v.id
     """))
     return creadas

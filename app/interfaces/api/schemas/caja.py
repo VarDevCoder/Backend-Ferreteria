@@ -39,6 +39,7 @@ class CajaTurnoResponse(BaseModel):
     total_ventas_efectivo: int
     total_ventas_tarjeta: int
     total_ventas_transferencia: int
+    total_ventas_a_cuenta: int
     saldo_esperado: int
     conteo_fisico: int | None
     diferencia: int | None
@@ -51,7 +52,8 @@ class CajaTurnoResponse(BaseModel):
             id=t.id, usuario_id=t.usuario_id, fondo_inicial=t.fondo_inicial, estado=t.estado.value,
             fecha_apertura=t.fecha_apertura, fecha_cierre=t.fecha_cierre,
             total_ventas_efectivo=t.total_ventas_efectivo, total_ventas_tarjeta=t.total_ventas_tarjeta,
-            total_ventas_transferencia=t.total_ventas_transferencia, saldo_esperado=t.saldo_esperado(),
+            total_ventas_transferencia=t.total_ventas_transferencia, total_ventas_a_cuenta=t.total_ventas_a_cuenta,
+            saldo_esperado=t.saldo_esperado(),
             conteo_fisico=t.conteo_fisico, diferencia=t.diferencia, notas=t.notas,
             movimientos=[
                 MovimientoCajaResponse(id=m.id, tipo=m.tipo.value, monto=m.monto, motivo=m.motivo, created_at=m.created_at)
@@ -68,9 +70,19 @@ class ItemVentaInput(BaseModel):
     precio_unitario: int | None = Field(default=None, ge=0)
 
 
+class PagoInput(BaseModel):
+    metodo: str
+    monto: int = Field(ge=0)
+    referencia: str | None = Field(default=None, max_length=100)
+
+
 class VentaMostradorCreate(BaseModel):
     cliente_id: int | None = None
     metodo_pago: str = "EFECTIVO"
+    pagos: list[PagoInput] | None = Field(
+        default=None,
+        description="Varios medios (pago mixto) o una entrega más el resto a cuenta. Deben sumar el total.",
+    )
     descuento: int = Field(default=0, ge=0, le=100)
     notas: str | None = None
     items: list[ItemVentaInput] = Field(min_length=1)
@@ -82,6 +94,12 @@ class ItemVentaResponse(BaseModel):
     cantidad: float
     precio_unitario: int
     subtotal: int
+
+
+class VentaPagoResponse(BaseModel):
+    metodo: str
+    monto: int
+    referencia: str | None
 
 
 class VentaMostradorResponse(BaseModel):
@@ -97,6 +115,7 @@ class VentaMostradorResponse(BaseModel):
     notas: str | None
     created_at: datetime | None
     items: list[ItemVentaResponse]
+    pagos: list[VentaPagoResponse]
 
     @classmethod
     def desde_entidad(cls, v) -> "VentaMostradorResponse":
@@ -111,6 +130,7 @@ class VentaMostradorResponse(BaseModel):
                 )
                 for i in v.items
             ],
+            pagos=[VentaPagoResponse(metodo=p.metodo.value, monto=p.monto, referencia=p.referencia) for p in v.pagos],
         )
 
 

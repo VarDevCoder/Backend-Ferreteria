@@ -8,7 +8,8 @@ con arqueo (conteo físico vs. lo que el sistema esperaba encontrar).
 from datetime import datetime
 from decimal import Decimal
 
-from app.domain.entities import CajaTurno, MovimientoCaja, MovimientoInventario, VentaMostrador, VentaMostradorItem
+from app.application.services.cuenta_corriente_service import CuentaCorrienteService
+from app.domain.entities import CajaTurno, MovimientoCaja, MovimientoInventario, VentaMostrador, VentaMostradorItem, VentaPago
 from app.domain.enums import MetodoPago, TipoMovimientoCaja, TipoMovimientoInventario, TipoReferenciaMovimiento
 from app.domain.exceptions import (
     PermisoDenegado,
@@ -32,11 +33,13 @@ class CajaService:
         ventas: VentaMostradorRepository,
         productos: ProductoRepository,
         movimientos: MovimientoInventarioRepository,
+        cuenta_corriente: CuentaCorrienteService | None = None,
     ):
         self._turnos = turnos
         self._ventas = ventas
         self._productos = productos
         self._movimientos = movimientos
+        self._cuenta_corriente = cuenta_corriente
 
     # --- Turnos ------------------------------------------------------------
 
@@ -100,10 +103,15 @@ class CajaService:
         descuento: int = 0,
         notas: str | None = None,
         puede_cambiar_precios: bool = False,
+        pagos: list[dict] | None = None,
     ) -> VentaMostrador:
-        """Registra una venta de contado. `puede_cambiar_precios`: si es False,
-        el precio de cada línea tiene que ser el de lista del producto (el
-        quién vendió queda en `usuario_id`)."""
+        """Registra una venta de mostrador.
+
+        `pagos`: con qué se cobra, p. ej. parte en efectivo y parte con
+        tarjeta, o una entrega y el resto "a cuenta" (pago parcial). Tienen
+        que sumar el total. Sin `pagos`, se cobra todo con `metodo_pago`.
+        `puede_cambiar_precios`: si es False, el precio de cada línea tiene
+        que ser el de lista del producto (el quién vendió queda en `usuario_id`)."""
         turno = self._turnos.get_abierto()
         if turno is None:
             raise TransicionDeEstadoInvalida("No hay un turno de caja abierto. Abrí caja antes de vender.")
@@ -148,12 +156,18 @@ class CajaService:
             caja_turno_id=turno.id,
             usuario_id=usuario_id,
             cliente_id=cliente_id,
-            metodo_pago=MetodoPago(metodo_pago),
             descuento=descuento,
             notas=notas,
             items=venta_items,
         )
         venta.calcular_totales()
+        venta.pagos = self._validar_pagos(pagos or [{"metodo": metodo_pago, "monto": venta.total}], venta.total)
+        venta.metodo_pago = venta.pagos[0].metodo if len(venta.pagos) == 1 else MetodoPago.MIXTO
+        a_cuenta = venta.monto_a_cuenta()
+        if a_cuenta:
+            if self._cuenta_corriente is None:
+                raise SolicitudInvalida("La venta a cuenta no está disponible")
+            self._cuenta_corriente.validar_cargo(cliente_id, a_cuenta)
         venta = self._ventas.add(venta)
 
         for item in venta.items:
@@ -171,8 +185,38 @@ class CajaService:
                 )
             )
 
-        self._turnos.acumular_venta(turno.id, venta.metodo_pago.value, venta.total)
+        for pago in venta.pagos:
+            self._turnos.acumular_venta(turno.id, pago.metodo.value, pago.monto)
+        if a_cuenta:
+            self._cuenta_corriente.registrar_cargo(
+                cliente_id, a_cuenta, venta_id=venta.id, caja_turno_id=turno.id,
+                referencia=f"Venta {venta.numero}", usuario_id=usuario_id,
+            )
         return venta
+
+    @staticmethod
+    def _validar_pagos(pagos: list[dict], total: int) -> list[VentaPago]:
+        validos = set(MetodoPago.para_cobrar()) | {MetodoPago.TARJETA}
+        resultado: list[VentaPago] = []
+        for p in pagos:
+            try:
+                metodo = MetodoPago(p["metodo"])
+            except ValueError:
+                raise SolicitudInvalida(f"Medio de pago desconocido: {p['metodo']}") from None
+            if metodo not in validos:
+                raise SolicitudInvalida(f"Medio de pago no válido para cobrar: {metodo.value}")
+            monto = int(p["monto"])
+            if monto < 0 or (monto == 0 and total > 0):
+                raise SolicitudInvalida("Cada pago tiene que ser mayor a cero")
+            resultado.append(VentaPago(metodo=metodo, monto=monto, referencia=(p.get("referencia") or None)))
+        if sum(1 for p in resultado if p.metodo == MetodoPago.CUENTA_CORRIENTE) > 1:
+            raise SolicitudInvalida("Cargá el monto a cuenta en una sola línea")
+        cobrado = sum(p.monto for p in resultado)
+        if cobrado != total:
+            falta = total - cobrado
+            detalle = f"faltan Gs. {falta:,}" if falta > 0 else f"sobran Gs. {-falta:,}"
+            raise SolicitudInvalida(f"Los pagos no coinciden con el total de la venta ({detalle})".replace(",", "."))
+        return resultado
 
     def resumen_hoy(self) -> dict:
         return {
