@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends
 
 from app.application.permisos import puede_cambiar_precio_de_venta
 from app.application.services.caja_service import CajaService
-from app.interfaces.api.deps import RequireAnkorUser, get_caja_service
+from app.interfaces.api.deps import RequireSailUser, get_caja_service
 from app.interfaces.api.schemas.caja import (
     AbrirCajaInput,
     CajaTurnoResponse,
@@ -38,14 +38,14 @@ def obtener_turno(turno_id: int, servicio: CajaSvc) -> CajaTurnoResponse:
 
 
 @router.post("/turnos/abrir", response_model=CajaTurnoResponse, status_code=201)
-def abrir_turno(datos: AbrirCajaInput, servicio: CajaSvc, usuario: RequireAnkorUser) -> CajaTurnoResponse:
+def abrir_turno(datos: AbrirCajaInput, servicio: CajaSvc, usuario: RequireSailUser) -> CajaTurnoResponse:
     turno = servicio.abrir_turno(usuario_id=usuario.id, fondo_inicial=datos.fondo_inicial)
     return CajaTurnoResponse.desde_entidad(turno)
 
 
 @router.post("/turnos/{turno_id}/movimientos", response_model=CajaTurnoResponse)
 def registrar_movimiento(
-    turno_id: int, datos: MovimientoCajaInput, servicio: CajaSvc, usuario: RequireAnkorUser
+    turno_id: int, datos: MovimientoCajaInput, servicio: CajaSvc, usuario: RequireSailUser
 ) -> CajaTurnoResponse:
     turno = servicio.registrar_movimiento(
         turno_id, tipo=datos.tipo, monto=datos.monto, motivo=datos.motivo, usuario_id=usuario.id
@@ -54,7 +54,7 @@ def registrar_movimiento(
 
 
 @router.post("/turnos/{turno_id}/cerrar", response_model=CajaTurnoResponse, summary="Arqueo: cierra el turno comparando conteo físico vs. saldo esperado")
-def cerrar_turno(turno_id: int, datos: CerrarCajaInput, servicio: CajaSvc, _usuario: RequireAnkorUser) -> CajaTurnoResponse:
+def cerrar_turno(turno_id: int, datos: CerrarCajaInput, servicio: CajaSvc, _usuario: RequireSailUser) -> CajaTurnoResponse:
     turno = servicio.cerrar_turno(turno_id, conteo_fisico=datos.conteo_fisico, notas=datos.notas)
     return CajaTurnoResponse.desde_entidad(turno)
 
@@ -65,7 +65,7 @@ def listar_ventas(servicio: CajaSvc, caja_turno_id: int | None = None, limit: in
 
 
 @router.post("/ventas", response_model=VentaMostradorResponse, status_code=201, summary="Venta de mostrador: cobro directo, descuenta stock de inmediato")
-def registrar_venta(datos: VentaMostradorCreate, servicio: CajaSvc, usuario: RequireAnkorUser) -> VentaMostradorResponse:
+def registrar_venta(datos: VentaMostradorCreate, servicio: CajaSvc, usuario: RequireSailUser) -> VentaMostradorResponse:
     venta = servicio.registrar_venta(
         usuario_id=usuario.id,
         items=[i.model_dump() for i in datos.items],

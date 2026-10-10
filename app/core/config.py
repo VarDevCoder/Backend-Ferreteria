@@ -18,11 +18,12 @@ _SECRET_KEY_DESARROLLO = "clave-de-desarrollo-no-usar-en-produccion"
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
-    app_name: str = "Ferretería API"
+    app_name: str = "SAIL API"
     environment: str = "development"
 
     # Postgres (Neon en producción). Ej:
     # postgresql+pg8000://usuario:password@host/dbname?ssl_context=true
+    # (usuario/base "ankor" en local: nombre heredado del entorno de desarrollo)
     database_url: str = "postgresql+pg8000://ankor:ankor@localhost:5432/ankor"
 
     # CORS: dominios del frontend (Netlify) autorizados a llamar la API

@@ -4,7 +4,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends
 
 from app.application.services.solicitud_presupuesto_service import SolicitudPresupuestoService
-from app.interfaces.api.deps import RequireAnkorUser, get_solicitud_service
+from app.interfaces.api.deps import RequireSailUser, get_solicitud_service
 from app.interfaces.api.schemas.common import Mensaje
 from app.interfaces.api.schemas.flujo import (
     CotizacionInput,
@@ -33,25 +33,25 @@ def obtener_solicitud(solicitud_id: int, servicio: SolicitudSvc) -> SolicitudPre
 
 
 @router.post("", response_model=SolicitudPresupuestoResponse, status_code=201)
-def crear_solicitud(datos: SolicitudPresupuestoCreate, servicio: SolicitudSvc, usuario: RequireAnkorUser) -> SolicitudPresupuestoResponse:
+def crear_solicitud(datos: SolicitudPresupuestoCreate, servicio: SolicitudSvc, usuario: RequireSailUser) -> SolicitudPresupuestoResponse:
     solicitud = servicio.crear(usuario_id=usuario.id, items=[i.model_dump() for i in datos.items], **datos.model_dump(exclude={"items"}))
     return SolicitudPresupuestoResponse.desde_entidad(solicitud)
 
 
 @router.delete("/{solicitud_id}", response_model=Mensaje)
-def eliminar_solicitud(solicitud_id: int, servicio: SolicitudSvc, _usuario: RequireAnkorUser) -> Mensaje:
+def eliminar_solicitud(solicitud_id: int, servicio: SolicitudSvc, _usuario: RequireSailUser) -> Mensaje:
     servicio.eliminar(solicitud_id)
     return Mensaje(mensaje="Solicitud eliminada exitosamente")
 
 
 @router.post("/{solicitud_id}/aceptar", response_model=OrdenCompraResponse, summary="Acepta la cotización y emite la Orden de Compra")
-def aceptar_cotizacion(solicitud_id: int, servicio: SolicitudSvc, usuario: RequireAnkorUser) -> OrdenCompraResponse:
+def aceptar_cotizacion(solicitud_id: int, servicio: SolicitudSvc, usuario: RequireSailUser) -> OrdenCompraResponse:
     orden = servicio.aceptar(solicitud_id, usuario.id)
     return OrdenCompraResponse.desde_entidad(orden)
 
 
 @router.post("/{solicitud_id}/rechazar", response_model=SolicitudPresupuestoResponse)
-def rechazar_cotizacion(solicitud_id: int, servicio: SolicitudSvc, _usuario: RequireAnkorUser) -> SolicitudPresupuestoResponse:
+def rechazar_cotizacion(solicitud_id: int, servicio: SolicitudSvc, _usuario: RequireSailUser) -> SolicitudPresupuestoResponse:
     return SolicitudPresupuestoResponse.desde_entidad(servicio.rechazar(solicitud_id))
 
 

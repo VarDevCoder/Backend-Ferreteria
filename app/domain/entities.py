@@ -1,4 +1,4 @@
-"""Entidades del dominio ANKOR.
+"""Entidades del dominio de SAIL.
 
 Son `dataclasses` planas con la lógica de negocio (reglas de transición de
 estado, totales, validaciones) que en el Laravel original vivía en los

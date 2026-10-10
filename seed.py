@@ -54,11 +54,14 @@ from app.infrastructure.security.password_hasher import hash_password
 DEMO_PASSWORD = "demo12345"
 # email, nombre, rol. El primero es el admin con el que se presenta la demo.
 USUARIOS_DEMO = [
-    ("demo@ferreteria.local", "Admin Demo", RolUsuario.ADMIN),
-    ("encargado@ferreteria.local", "Encargado Demo", RolUsuario.ENCARGADO),
-    ("vendedor@ferreteria.local", "Vendedor Demo", RolUsuario.VENDEDOR),
-    ("deposito@ferreteria.local", "Depósito Demo", RolUsuario.DEPOSITO),
+    ("demo@sail.local", "Admin Demo", RolUsuario.ADMIN),
+    ("encargado@sail.local", "Encargado Demo", RolUsuario.ENCARGADO),
+    ("vendedor@sail.local", "Vendedor Demo", RolUsuario.VENDEDOR),
+    ("deposito@sail.local", "Depósito Demo", RolUsuario.DEPOSITO),
 ]
+# Usuarios demo de versiones anteriores (antes de llamarse SAIL). Se
+# desactivan, no se borran: tienen ventas y movimientos a su nombre.
+DOMINIOS_DEMO_ANTERIORES = ("@ankor.local", "@ferreteria.local")
 
 CATEGORIAS_EXTRA = [
     ("Pinturería", "Pinturas, rodillos y accesorios", 4),
@@ -142,6 +145,11 @@ def main(migrar: bool = True) -> None:
                 usuarios.add(Usuario(id=None, name=nombre, email=email, password_hash=hash_password(DEMO_PASSWORD), rol=rol))
                 print(f"Usuario demo {email} ({rol.value}) creado — contraseña: {DEMO_PASSWORD}")
         demo_user = usuarios.get_by_email(USUARIOS_DEMO[0][0])
+        for anterior in usuarios.list_internos():
+            if anterior.activo and anterior.email.endswith(DOMINIOS_DEMO_ANTERIORES):
+                anterior.activo = False
+                usuarios.update(anterior)
+                print(f"Usuario demo anterior {anterior.email} desactivado")
 
         if not categorias_repo.list():
             cat_ferreteria = categorias.crear("Ferretería general", "Herramientas e insumos de ferretería", 1)

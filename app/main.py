@@ -42,7 +42,7 @@ settings = get_settings()
 app = FastAPI(
     title=settings.app_name,
     description=(
-        "API del sistema de gestión para ferreterías: caja de mostrador, ciclo comercial "
+        "API de SAIL, sistema de gestión para ferreterías: caja de mostrador, ciclo comercial "
         "pedido → cotización → compra → envío, inventario y reportes. "
         "Autenticación: `POST /api/v1/auth/login` devuelve un token que se envía como "
         "`Authorization: Bearer <token>` (botón *Authorize* de esta página)."

@@ -19,11 +19,11 @@ código de barras ni total a la vista. Además no hay IVA, listas de precios (mi
 mayorista, contratista), cuenta corriente, devoluciones de mostrador, ajuste de inventario
 ni reportes.
 
-**Técnico:** el dominio actual es el de ANKOR (distribuidor):
+**Técnico:** el dominio de partida es el de la versión para distribuidores:
 `PedidoCliente → SolicitudPresupuesto → OrdenCompra → OrdenEnvio`, más `CajaTurno` y
 `VentaMostrador`. `Producto` tiene un solo precio (`precio_venta`, entero en Gs.), una
 `unidad_medida` de texto libre, sin factor de conversión, y ningún campo de impuesto ni de
-código de barras. No hay autenticación: todo se registra con el usuario `demo@ankor.local`.
+código de barras. No hay autenticación: todo se registra con un usuario demo fijo.
 No hay tests.
 
 **Propuesta:** empezar por lo que acelera la venta diaria (búsqueda rápida y código de

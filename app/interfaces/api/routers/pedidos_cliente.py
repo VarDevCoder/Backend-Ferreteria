@@ -8,7 +8,7 @@ from app.application.services.contactos_service import ProveedorProductoService,
 from app.application.services.pedido_cliente_service import PedidoClienteService
 from app.application.services.solicitud_presupuesto_service import SolicitudPresupuestoService
 from app.interfaces.api.deps import (
-    RequireAnkorUser,
+    RequireSailUser,
     get_pedido_cliente_service,
     get_producto_service,
     get_proveedor_producto_service,
@@ -47,41 +47,41 @@ def obtener_pedido(pedido_id: int, servicio: PedidoSvc) -> PedidoClienteResponse
 
 
 @router.post("", response_model=PedidoClienteResponse, status_code=201)
-def crear_pedido(datos: PedidoClienteCreate, servicio: PedidoSvc, usuario: RequireAnkorUser) -> PedidoClienteResponse:
+def crear_pedido(datos: PedidoClienteCreate, servicio: PedidoSvc, usuario: RequireSailUser) -> PedidoClienteResponse:
     pedido = servicio.crear(usuario_id=usuario.id, items=[i.model_dump() for i in datos.items], **datos.model_dump(exclude={"items"}))
     return PedidoClienteResponse.desde_entidad(pedido)
 
 
 @router.put("/{pedido_id}", response_model=PedidoClienteResponse)
-def actualizar_pedido(pedido_id: int, datos: PedidoClienteUpdate, servicio: PedidoSvc, _usuario: RequireAnkorUser) -> PedidoClienteResponse:
+def actualizar_pedido(pedido_id: int, datos: PedidoClienteUpdate, servicio: PedidoSvc, _usuario: RequireSailUser) -> PedidoClienteResponse:
     pedido = servicio.actualizar(pedido_id, items=[i.model_dump() for i in datos.items], **datos.model_dump(exclude={"items"}))
     return PedidoClienteResponse.desde_entidad(pedido)
 
 
 @router.delete("/{pedido_id}", response_model=Mensaje)
-def eliminar_pedido(pedido_id: int, servicio: PedidoSvc, _usuario: RequireAnkorUser) -> Mensaje:
+def eliminar_pedido(pedido_id: int, servicio: PedidoSvc, _usuario: RequireSailUser) -> Mensaje:
     servicio.eliminar(pedido_id)
     return Mensaje(mensaje="Solicitud eliminada exitosamente")
 
 
 @router.post("/{pedido_id}/procesar", response_model=PedidoClienteResponse)
-def procesar_pedido(pedido_id: int, servicio: PedidoSvc, _usuario: RequireAnkorUser) -> PedidoClienteResponse:
+def procesar_pedido(pedido_id: int, servicio: PedidoSvc, _usuario: RequireSailUser) -> PedidoClienteResponse:
     return PedidoClienteResponse.desde_entidad(servicio.procesar(pedido_id))
 
 
 @router.post("/{pedido_id}/cancelar", response_model=PedidoClienteResponse)
-def cancelar_pedido(pedido_id: int, datos: MotivoRequerido, servicio: PedidoSvc, _usuario: RequireAnkorUser) -> PedidoClienteResponse:
+def cancelar_pedido(pedido_id: int, datos: MotivoRequerido, servicio: PedidoSvc, _usuario: RequireSailUser) -> PedidoClienteResponse:
     return PedidoClienteResponse.desde_entidad(servicio.cancelar(pedido_id, datos.motivo))
 
 
 @router.post("/{pedido_id}/mercaderia-recibida", response_model=PedidoClienteResponse)
-def marcar_mercaderia_recibida(pedido_id: int, servicio: PedidoSvc, _usuario: RequireAnkorUser) -> PedidoClienteResponse:
+def marcar_mercaderia_recibida(pedido_id: int, servicio: PedidoSvc, _usuario: RequireSailUser) -> PedidoClienteResponse:
     return PedidoClienteResponse.desde_entidad(servicio.marcar_mercaderia_recibida(pedido_id))
 
 
 @router.post("/{pedido_id}/solicitar-todos", response_model=Mensaje)
 def solicitar_cotizacion_a_todos(
-    pedido_id: int, servicio: PedidoSvc, usuario: RequireAnkorUser, solo_faltantes: bool = False
+    pedido_id: int, servicio: PedidoSvc, usuario: RequireSailUser, solo_faltantes: bool = False
 ) -> Mensaje:
     _pedido, creadas = servicio.solicitar_cotizacion_todos(pedido_id, usuario.id, solo_faltantes=solo_faltantes)
     alcance = "de lo que falta " if solo_faltantes else ""

@@ -4,7 +4,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query
 
 from app.application.services.catalogo_service import CategoriaService, ProductoService
-from app.interfaces.api.deps import RequireAnkorUser, get_categoria_service, get_producto_service
+from app.interfaces.api.deps import RequireSailUser, get_categoria_service, get_producto_service
 from app.interfaces.api.schemas.catalogo import (
     CategoriaCreate,
     CategoriaResponse,
@@ -27,19 +27,19 @@ def listar_categorias(servicio: CategoriaSvc, solo_activas: bool = False) -> lis
 
 
 @router.post("/categorias", response_model=CategoriaResponse, status_code=201)
-def crear_categoria(datos: CategoriaCreate, servicio: CategoriaSvc, _usuario: RequireAnkorUser) -> CategoriaResponse:
+def crear_categoria(datos: CategoriaCreate, servicio: CategoriaSvc, _usuario: RequireSailUser) -> CategoriaResponse:
     categoria = servicio.crear(datos.nombre, datos.descripcion, datos.orden)
     return CategoriaResponse(**vars(categoria))
 
 
 @router.put("/categorias/{categoria_id}", response_model=CategoriaResponse)
-def actualizar_categoria(categoria_id: int, datos: CategoriaUpdate, servicio: CategoriaSvc, _usuario: RequireAnkorUser) -> CategoriaResponse:
+def actualizar_categoria(categoria_id: int, datos: CategoriaUpdate, servicio: CategoriaSvc, _usuario: RequireSailUser) -> CategoriaResponse:
     categoria = servicio.actualizar(categoria_id, datos.nombre, datos.descripcion, datos.activo, datos.orden)
     return CategoriaResponse(**vars(categoria))
 
 
 @router.delete("/categorias/{categoria_id}", response_model=Mensaje)
-def eliminar_categoria(categoria_id: int, servicio: CategoriaSvc, _usuario: RequireAnkorUser) -> Mensaje:
+def eliminar_categoria(categoria_id: int, servicio: CategoriaSvc, _usuario: RequireSailUser) -> Mensaje:
     servicio.eliminar(categoria_id)
     return Mensaje(mensaje="Categoría eliminada exitosamente")
 
@@ -65,7 +65,7 @@ def obtener_producto(producto_id: int, servicio: ProductoSvc) -> ProductoRespons
 
 
 @router.post("/productos", response_model=ProductoResponse, status_code=201)
-def crear_producto(datos: ProductoCreate, servicio: ProductoSvc, _usuario: RequireAnkorUser) -> ProductoResponse:
+def crear_producto(datos: ProductoCreate, servicio: ProductoSvc, _usuario: RequireSailUser) -> ProductoResponse:
     producto = servicio.crear(
         datos.nombre, datos.descripcion, datos.categoria_id, datos.precio_compra, datos.precio_venta,
         datos.stock_minimo, datos.unidad_medida, codigo=datos.codigo,
@@ -74,7 +74,7 @@ def crear_producto(datos: ProductoCreate, servicio: ProductoSvc, _usuario: Requi
 
 
 @router.put("/productos/{producto_id}", response_model=ProductoResponse)
-def actualizar_producto(producto_id: int, datos: ProductoUpdate, servicio: ProductoSvc, _usuario: RequireAnkorUser) -> ProductoResponse:
+def actualizar_producto(producto_id: int, datos: ProductoUpdate, servicio: ProductoSvc, _usuario: RequireSailUser) -> ProductoResponse:
     producto = servicio.actualizar(
         producto_id, datos.nombre, datos.descripcion, datos.categoria_id, datos.precio_compra, datos.precio_venta,
         datos.stock_minimo, datos.unidad_medida, datos.activo,
@@ -83,6 +83,6 @@ def actualizar_producto(producto_id: int, datos: ProductoUpdate, servicio: Produ
 
 
 @router.delete("/productos/{producto_id}", response_model=Mensaje)
-def eliminar_producto(producto_id: int, servicio: ProductoSvc, _usuario: RequireAnkorUser) -> Mensaje:
+def eliminar_producto(producto_id: int, servicio: ProductoSvc, _usuario: RequireSailUser) -> Mensaje:
     servicio.eliminar(producto_id)
     return Mensaje(mensaje="Producto eliminado exitosamente")

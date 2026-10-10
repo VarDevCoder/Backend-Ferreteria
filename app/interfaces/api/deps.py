@@ -284,6 +284,6 @@ def requiere_modulo(modulo: Modulo) -> Callable[..., None]:
 # Alias históricos que usan los routers para obtener al usuario autenticado
 # (quién generó cada documento). El control de permisos lo hace
 # `requiere_modulo` a nivel de router.
-RequireAnkorUser = CurrentUser
+RequireSailUser = CurrentUser
 RequireProveedor = CurrentUser
 RequireAdmin = CurrentUser

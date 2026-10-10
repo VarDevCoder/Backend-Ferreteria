@@ -80,7 +80,7 @@ class TipoMovimientoInventario(StrEnum):
 
 
 class TipoReferenciaMovimiento(StrEnum):
-    """A qué documento del flujo ANKOR corresponde un movimiento de inventario."""
+    """A qué documento del flujo comercial corresponde un movimiento de inventario."""
 
     ORDEN_COMPRA = "ORDEN_COMPRA"
     ORDEN_ENVIO = "ORDEN_ENVIO"

@@ -1,7 +1,8 @@
-# Backend Ferretería — sistema de gestión para ferreterías
+# SAIL — sistema de gestión para ferreterías (backend)
 
-API REST de un sistema de gestión pensado para que **cualquier ferretería** lo instale
-y lo use con sus propios datos: caja de mostrador, ciclo comercial
+API REST de **SAIL** (antes ANKOR: el ancla te frena, la vela te impulsa), un sistema de
+gestión pensado para que **cualquier ferretería** lo instale y lo use con sus propios datos:
+caja de mostrador, ciclo comercial
 **pedido de cliente → solicitud de presupuesto → orden de compra → orden de envío**,
 catálogo, contactos, inventario (kardex y ajustes de stock), reportes de ventas y
 administración del personal con roles.
@@ -18,7 +19,8 @@ usuario administrador; a partir de ahí todo requiere iniciar sesión.
 | Frontend | [Frontend-Ferreteria](https://github.com/VarDevCoder/Frontend-Ferreteria) en Netlify |
 
 **Producción:** https://ankor-backend.vercel.app — documentación interactiva en
-[`/docs`](https://ankor-backend.vercel.app/docs).
+[`/docs`](https://ankor-backend.vercel.app/docs). (El dominio conserva el nombre con que se
+creó el proyecto en Vercel; el producto se llama SAIL.)
 
 ---
 
@@ -137,7 +139,7 @@ TEST_DATABASE_URL=postgresql+pg8000://user:pass@localhost:5432/ferreteria_test p
 | `SECRET_KEY` | Firma de las sesiones. **Obligatoria en producción** (la app no arranca sin ella) | salida de `python -c "import secrets; print(secrets.token_urlsafe(48))"` |
 | `ACCESS_TOKEN_MINUTES` | Duración de la sesión | `720` |
 | `SEED_DEMO` | `true` carga la ferretería de ejemplo al arrancar; `false` para una empresa real | `false` |
-| `APP_NAME` | Nombre que devuelve `GET /` | `Ferretería API` |
+| `APP_NAME` | Nombre que devuelve `GET /` y título de `/docs` | `SAIL API` |
 | `ENVIRONMENT` | `development` / `production` | `production` |
 
 **URL de Neon:** copiar el *Connection string* del dashboard de Neon y cambiar el prefijo
@@ -151,10 +153,12 @@ espera pg8000. Usar el host con `-pooler` para la app.
 - **Esquema:** lo manejan las migraciones de Alembic (`alembic/versions/`).
   Para un cambio de modelo: `alembic revision --autogenerate -m "descripcion"` y revisar el archivo generado.
 - **Datos de demo:** `python seed.py --demo` (o `SEED_DEMO=true`) crea la empresa "Ferretería Demo",
-  un usuario por rol (`demo@`, `encargado@`, `vendedor@`, `deposito@ferreteria.local`, contraseña
-  `demo12345`), un catálogo de ~26 productos en 6 categorías, clientes, proveedores con su catálogo y
+  un usuario por rol (`demo@`, `encargado@`, `vendedor@`, `deposito@sail.local`, contraseña
+  `demo12345`; los usuarios demo de versiones anteriores, `@ankor.local` y `@ferreteria.local`,
+  quedan desactivados), un catálogo de ~26 productos en 6 categorías, clientes, proveedores con su catálogo y
   **unas 6 semanas de operación**: turnos de caja diarios con arqueo, ~350 ventas de mostrador con
-  efectivo/tarjeta/transferencia, kardex coherente, algunos productos bajo el mínimo, la caja de hoy
+  efectivo, débito, crédito, transferencia, QR y pagos mixtos, clientes con cuenta corriente
+  (deudas al día y atrasadas), kardex coherente, algunos productos bajo el mínimo, la caja de hoy
   abierta con ventas y pedidos en distintas etapas (recibido, listo para envío, entregado).
   Ver `app/infrastructure/db/demo_historial.py`. Solo inserta lo que falta, así que se puede correr
   varias veces. **No usar en la base de una empresa real**: los usuarios demo tienen contraseña conocida.
@@ -163,7 +167,7 @@ espera pg8000. Usar el host con `-pooler` para la app.
 
 ## Despliegue en Vercel
 
-Proyecto `ankor-backend` en la cuenta `vardevcoder`. La app corre como una función
+Proyecto `ankor-backend` (nombre de antes de SAIL) en la cuenta `vardevcoder`. La app corre como una función
 serverless de Python:
 
 - `api/index.py` importa `app.main:app`; Vercel sirve los archivos de `api/` como funciones.
@@ -216,7 +220,7 @@ Epicor Eagle, POS latinoamericanos, reseñas de Capterra y G2, una tesis univers
 APQC PCF Retail.
 
 **Hallazgo principal:** el núcleo del sistema es el flujo de **encargos**
-(pedido → cotización a proveedores → OC → envío), heredado de ANKOR (distribuidor). En una
+(pedido → cotización a proveedores → OC → envío), heredado de la versión original para distribuidores. En una
 ferretería eso es la excepción. El día a día es la **venta de mostrador**, que hoy funciona
 pero es lenta:
 - el producto se elige de un desplegable con todo el catálogo;

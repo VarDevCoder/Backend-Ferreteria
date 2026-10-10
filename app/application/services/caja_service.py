@@ -1,6 +1,6 @@
 """Casos de uso de Caja y venta de mostrador.
 
-Cubre el flujo que ANKOR no tenía: alguien entra al local, compra al contado
+Cubre el flujo que la versión para distribuidores no tenía: alguien entra al local, compra al contado
 y se va. Eso exige un turno de caja abierto (RF: no se puede vender sin caja
 abierta), descuenta stock igual que una orden de envío, y el turno se cierra
 con arqueo (conteo físico vs. lo que el sistema esperaba encontrar).

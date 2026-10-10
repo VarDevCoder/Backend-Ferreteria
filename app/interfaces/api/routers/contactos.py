@@ -10,7 +10,7 @@ from app.domain.entities import Cliente, Proveedor, Usuario
 from app.domain.exceptions import PermisoDenegado
 from app.interfaces.api.deps import (
     CurrentUser,
-    RequireAnkorUser,
+    RequireSailUser,
     get_cliente_service,
     get_cuenta_corriente_service,
     get_proveedor_producto_service,
@@ -86,13 +86,13 @@ def obtener_cliente(cliente_id: int, servicio: ClienteSvc, cuentas: CuentaSvc) -
 
 
 @router.post("/clientes", dependencies=_PERMISO_CLIENTES, response_model=ClienteResponse, status_code=201)
-def crear_cliente(datos: ClienteCreate, servicio: ClienteSvc, usuario: RequireAnkorUser) -> ClienteResponse:
+def crear_cliente(datos: ClienteCreate, servicio: ClienteSvc, usuario: RequireSailUser) -> ClienteResponse:
     return _cliente_response(servicio.crear(**_datos_cliente(datos, usuario)))
 
 
 @router.put("/clientes/{cliente_id}", dependencies=_PERMISO_CLIENTES, response_model=ClienteResponse)
 def actualizar_cliente(
-    cliente_id: int, datos: ClienteUpdate, servicio: ClienteSvc, cuentas: CuentaSvc, usuario: RequireAnkorUser
+    cliente_id: int, datos: ClienteUpdate, servicio: ClienteSvc, cuentas: CuentaSvc, usuario: RequireSailUser
 ) -> ClienteResponse:
     actual = servicio.obtener(cliente_id)
     cliente = servicio.actualizar(cliente_id, **_datos_cliente(datos, usuario, actual.limite_credito))
@@ -100,13 +100,13 @@ def actualizar_cliente(
 
 
 @router.delete("/clientes/{cliente_id}", dependencies=_PERMISO_CLIENTES, response_model=Mensaje)
-def eliminar_cliente(cliente_id: int, servicio: ClienteSvc, _usuario: RequireAnkorUser) -> Mensaje:
+def eliminar_cliente(cliente_id: int, servicio: ClienteSvc, _usuario: RequireSailUser) -> Mensaje:
     servicio.eliminar(cliente_id)
     return Mensaje(mensaje="Cliente eliminado exitosamente")
 
 
 @router.post("/clientes/{cliente_id}/toggle-activo", dependencies=_PERMISO_CLIENTES, response_model=ClienteResponse)
-def toggle_activo_cliente(cliente_id: int, servicio: ClienteSvc, cuentas: CuentaSvc, _usuario: RequireAnkorUser) -> ClienteResponse:
+def toggle_activo_cliente(cliente_id: int, servicio: ClienteSvc, cuentas: CuentaSvc, _usuario: RequireSailUser) -> ClienteResponse:
     return _cliente_response(servicio.toggle_activo(cliente_id), cuentas.saldos().get(cliente_id, 0))
 
 
@@ -123,17 +123,17 @@ def obtener_proveedor(proveedor_id: int, servicio: ProveedorSvc) -> ProveedorRes
 
 
 @router.post("/proveedores", dependencies=_PERMISO_PROVEEDORES, response_model=ProveedorResponse, status_code=201)
-def crear_proveedor(datos: ProveedorCreate, servicio: ProveedorSvc, _usuario: RequireAnkorUser) -> ProveedorResponse:
+def crear_proveedor(datos: ProveedorCreate, servicio: ProveedorSvc, _usuario: RequireSailUser) -> ProveedorResponse:
     return _proveedor_response(servicio.crear(**datos.model_dump()))
 
 
 @router.put("/proveedores/{proveedor_id}", dependencies=_PERMISO_PROVEEDORES, response_model=ProveedorResponse)
-def actualizar_proveedor(proveedor_id: int, datos: ProveedorUpdate, servicio: ProveedorSvc, _usuario: RequireAnkorUser) -> ProveedorResponse:
+def actualizar_proveedor(proveedor_id: int, datos: ProveedorUpdate, servicio: ProveedorSvc, _usuario: RequireSailUser) -> ProveedorResponse:
     return _proveedor_response(servicio.actualizar(proveedor_id, **datos.model_dump()))
 
 
 @router.post("/proveedores/{proveedor_id}/toggle-activo", dependencies=_PERMISO_PROVEEDORES, response_model=ProveedorResponse)
-def toggle_activo_proveedor(proveedor_id: int, servicio: ProveedorSvc, _usuario: RequireAnkorUser) -> ProveedorResponse:
+def toggle_activo_proveedor(proveedor_id: int, servicio: ProveedorSvc, _usuario: RequireSailUser) -> ProveedorResponse:
     return _proveedor_response(servicio.toggle_activo(proveedor_id))
 
 

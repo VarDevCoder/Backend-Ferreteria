@@ -4,7 +4,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends
 
 from app.application.services.cuenta_corriente_service import CuentaCorrienteService
-from app.interfaces.api.deps import RequireAnkorUser, get_cuenta_corriente_service
+from app.interfaces.api.deps import RequireSailUser, get_cuenta_corriente_service
 from app.interfaces.api.schemas.cuenta_corriente import (
     CobroInput,
     DeudorResponse,
@@ -39,7 +39,7 @@ def estado_de_cuenta(cliente_id: int, servicio: CuentaSvc, limit: int = 100) -> 
 
 @router.post("/clientes/{cliente_id}/cuenta-corriente/cobros", response_model=EstadoDeCuentaResponse, status_code=201,
              summary="Cobra (total o parcialmente) la deuda de un cliente")
-def registrar_cobro(cliente_id: int, datos: CobroInput, servicio: CuentaSvc, usuario: RequireAnkorUser) -> EstadoDeCuentaResponse:
+def registrar_cobro(cliente_id: int, datos: CobroInput, servicio: CuentaSvc, usuario: RequireSailUser) -> EstadoDeCuentaResponse:
     servicio.registrar_cobro(cliente_id, datos.monto, datos.metodo, datos.referencia, usuario.id)
     return _estado(servicio.estado_de_cuenta(cliente_id))
 
