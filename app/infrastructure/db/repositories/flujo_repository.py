@@ -32,9 +32,12 @@ from app.domain.enums import (
     EstadoCajaTurno,
     EstadoOrdenCompra,
     EstadoOrdenEnvio,
+    EstadoPagoPedido,
     EstadoPedidoCliente,
     EstadoSolicitudPresupuesto,
+    FormaPagoPedido,
     MetodoPago,
+    ModalidadEntrega,
     TipoMovimientoCaja,
     TipoMovimientoInventario,
     TipoReferenciaMovimiento,
@@ -121,6 +124,11 @@ class SqlAlchemyPedidoClienteRepository:
             descuento=pedido.descuento,
             total=pedido.total,
             notas=pedido.notas,
+            modalidad_entrega=pedido.modalidad_entrega.value,
+            forma_pago=pedido.forma_pago.value if pedido.forma_pago else None,
+            estado_pago=pedido.estado_pago.value,
+            monto_pagado=pedido.monto_pagado,
+            monto_a_cuenta=pedido.monto_a_cuenta,
             items=[
                 PedidoClienteItemModel(
                     producto_id=i.producto_id, cantidad=i.cantidad, precio_unitario=i.precio_unitario,
@@ -151,8 +159,22 @@ class SqlAlchemyPedidoClienteRepository:
         row.total = pedido.total
         row.notas = pedido.notas
         row.motivo_cancelacion = pedido.motivo_cancelacion
+        row.modalidad_entrega = pedido.modalidad_entrega.value
+        row.forma_pago = pedido.forma_pago.value if pedido.forma_pago else None
+        row.estado_pago = pedido.estado_pago.value
+        row.monto_pagado = pedido.monto_pagado
+        row.monto_a_cuenta = pedido.monto_a_cuenta
         self._session.flush()
         return self._to_entity(row)
+
+    def bloquear(self, pedido_id: int) -> PedidoCliente | None:
+        """Lee el pedido tomando su fila (FOR UPDATE): los cobros y la entrega
+        del mismo pedido se registran de a uno."""
+        row = self._session.execute(
+            select(PedidoClienteModel).where(PedidoClienteModel.id == pedido_id)
+            .with_for_update(of=PedidoClienteModel).execution_options(populate_existing=True)
+        ).scalar_one_or_none()
+        return self.get_by_id(pedido_id) if row is not None else None
 
     def replace_items(self, pedido_id: int, items: list[PedidoClienteItem]) -> None:
         row = self._session.get(PedidoClienteModel, pedido_id, options=[selectinload(PedidoClienteModel.items)])
@@ -212,6 +234,11 @@ class SqlAlchemyPedidoClienteRepository:
             notas=row.notas,
             motivo_cancelacion=row.motivo_cancelacion,
             created_at=row.created_at,
+            modalidad_entrega=ModalidadEntrega(row.modalidad_entrega or ModalidadEntrega.ENTREGA_DOMICILIO),
+            forma_pago=FormaPagoPedido(row.forma_pago) if row.forma_pago else None,
+            estado_pago=EstadoPagoPedido(row.estado_pago or EstadoPagoPedido.PENDIENTE),
+            monto_pagado=row.monto_pagado or 0,
+            monto_a_cuenta=row.monto_a_cuenta or 0,
             items=[
                 PedidoClienteItem(
                     id=i.id, pedido_cliente_id=i.pedido_cliente_id, producto_id=i.producto_id,
@@ -535,6 +562,12 @@ class SqlAlchemyOrdenEnvioRepository:
             transportista=orden.transportista,
             notas=orden.notas,
             estado=orden.estado.value,
+            modalidad=orden.modalidad.value,
+            numero_nota_remision=orden.numero_nota_remision,
+            transportista_ruc=orden.transportista_ruc,
+            vehiculo=orden.vehiculo,
+            conductor_nombre=orden.conductor_nombre,
+            conductor_documento=orden.conductor_documento,
             items=[OrdenEnvioItemModel(producto_id=i.producto_id, cantidad=i.cantidad) for i in orden.items],
         )
         self._session.add(row)
@@ -550,6 +583,12 @@ class SqlAlchemyOrdenEnvioRepository:
         row.fecha_entrega = orden.fecha_entrega
         row.numero_guia = orden.numero_guia
         row.observaciones_entrega = orden.observaciones_entrega
+        row.transportista = orden.transportista
+        row.numero_nota_remision = orden.numero_nota_remision
+        row.transportista_ruc = orden.transportista_ruc
+        row.vehiculo = orden.vehiculo
+        row.conductor_nombre = orden.conductor_nombre
+        row.conductor_documento = orden.conductor_documento
         self._session.flush()
         return self._to_entity(row)
 
@@ -590,6 +629,12 @@ class SqlAlchemyOrdenEnvioRepository:
             notas=row.notas,
             observaciones_entrega=row.observaciones_entrega,
             created_at=row.created_at,
+            modalidad=ModalidadEntrega(row.modalidad or ModalidadEntrega.ENTREGA_DOMICILIO),
+            numero_nota_remision=row.numero_nota_remision,
+            transportista_ruc=row.transportista_ruc,
+            vehiculo=row.vehiculo,
+            conductor_nombre=row.conductor_nombre,
+            conductor_documento=row.conductor_documento,
             items=[
                 OrdenEnvioItem(id=i.id, orden_envio_id=i.orden_envio_id, producto_id=i.producto_id, cantidad=i.cantidad)
                 for i in row.items

@@ -17,17 +17,21 @@ from app.domain.enums import (
     EstadoCajaTurno,
     EstadoOrdenCompra,
     EstadoOrdenEnvio,
+    EstadoPagoPedido,
     EstadoPedidoCliente,
     EstadoReclamoProveedor,
     EstadoSolicitudPresupuesto,
     EstadoStockNoVendible,
+    FormaPagoPedido,
     MetodoPago,
+    ModalidadEntrega,
     MotivoNoVendible,
     ResolucionItemReclamo,
     RolUsuario,
     TipoMovimientoCaja,
     TipoMovimientoCuentaCorriente,
     TipoMovimientoInventario,
+    TipoPagoPedido,
     TipoReferenciaMovimiento,
     TipoResolucionNoVendible,
 )
@@ -223,8 +227,75 @@ class PedidoCliente:
     motivo_cancelacion: str | None = None
     created_at: datetime | None = None
     items: list[PedidoClienteItem] = field(default_factory=list)
+    # Logística y cobro. `forma_pago` None = pedido anterior a que SAIL
+    # registrara cobros de pedidos (ver EstadoPagoPedido.SIN_REGISTRO).
+    modalidad_entrega: ModalidadEntrega = ModalidadEntrega.ENTREGA_DOMICILIO
+    forma_pago: FormaPagoPedido | None = FormaPagoPedido.CONTRA_ENTREGA
+    estado_pago: EstadoPagoPedido = EstadoPagoPedido.PENDIENTE
+    monto_pagado: int = 0     # cobrado (señas, pagos anticipados y rendiciones), sin anulados
+    monto_a_cuenta: int = 0   # cargado a la cuenta corriente del cliente
 
     ESTADOS_FINALES = (EstadoPedidoCliente.ENVIADO, EstadoPedidoCliente.ENTREGADO, EstadoPedidoCliente.CANCELADO)
+    # Mientras el pedido no tiene un envío en curso se puede cambiar cómo se entrega.
+    ESTADOS_SIN_ENVIO = (
+        EstadoPedidoCliente.RECIBIDO, EstadoPedidoCliente.EN_PROCESO, EstadoPedidoCliente.PRESUPUESTADO,
+        EstadoPedidoCliente.ORDEN_COMPRA, EstadoPedidoCliente.MERCADERIA_RECIBIDA,
+    )
+
+    # --- Cobro -------------------------------------------------------------------
+
+    def cubierto(self) -> int:
+        return self.monto_pagado + self.monto_a_cuenta
+
+    def saldo(self) -> int:
+        """Lo que falta cobrar (o cargar a cuenta)."""
+        return max(0, self.total - self.cubierto())
+
+    def recalcular_estado_pago(self) -> None:
+        if self.forma_pago is None:
+            self.estado_pago = EstadoPagoPedido.SIN_REGISTRO
+        elif self.saldo() == 0 and (self.cubierto() > 0 or self.total == 0):
+            self.estado_pago = EstadoPagoPedido.A_CUENTA if self.monto_a_cuenta else EstadoPagoPedido.PAGADO
+        elif self.estado == EstadoPedidoCliente.ENTREGADO and self.forma_pago == FormaPagoPedido.CONTRA_ENTREGA:
+            self.estado_pago = EstadoPagoPedido.POR_RENDIR
+        elif self.cubierto() > 0:
+            self.estado_pago = EstadoPagoPedido.PARCIAL
+        else:
+            self.estado_pago = EstadoPagoPedido.PENDIENTE
+
+    def esta_pagado(self) -> bool:
+        return self.estado_pago in (EstadoPagoPedido.PAGADO, EstadoPagoPedido.A_CUENTA)
+
+    def puede_cambiar_modalidad(self) -> bool:
+        return self.estado in self.ESTADOS_SIN_ENVIO
+
+    def puede_cambiar_forma_pago(self) -> bool:
+        return self.forma_pago is not None and self.estado not in (EstadoPedidoCliente.ENTREGADO, EstadoPedidoCliente.CANCELADO)
+
+    def puede_recibir_pagos(self) -> bool:
+        return self.forma_pago is not None and self.estado != EstadoPedidoCliente.CANCELADO and self.saldo() > 0
+
+    def etiqueta_cobro(self) -> str:
+        """Texto corto para listados: "Pagado a retirar", "Contra entrega", "Cobro por rendir"..."""
+        if self.estado == EstadoPedidoCliente.CANCELADO:
+            return "Cancelado"
+        if self.estado_pago == EstadoPagoPedido.SIN_REGISTRO:
+            return "Sin registro de cobro"
+        if self.estado == EstadoPedidoCliente.ENTREGADO:
+            return {
+                EstadoPagoPedido.PAGADO: "Entregado y pagado",
+                EstadoPagoPedido.A_CUENTA: "Entregado a cuenta",
+                EstadoPagoPedido.POR_RENDIR: "Cobro por rendir",
+            }.get(self.estado_pago, "Entregado con saldo pendiente")
+        retira = self.modalidad_entrega == ModalidadEntrega.RETIRA_CLIENTE
+        if self.esta_pagado():
+            return "Pagado a retirar" if retira else "Pagado a entregar"
+        sena = " (con seña)" if self.estado_pago == EstadoPagoPedido.PARCIAL else ""
+        if self.forma_pago == FormaPagoPedido.CONTRA_ENTREGA:
+            return ("Paga al retirar" if retira else "Contra entrega") + sena
+        if self.forma_pago == FormaPagoPedido.CUENTA_CORRIENTE:
+            return "A cuenta al " + ("retirar" if retira else "entregar") + sena
+        return "Falta el pago anticipado" + sena
 
     def calcular_totales(self) -> None:
         self.subtotal = sum(item.calcular_subtotal() for item in self.items)
@@ -416,14 +487,28 @@ class OrdenEnvio:
     observaciones_entrega: str | None = None
     created_at: datetime | None = None
     items: list[OrdenEnvioItem] = field(default_factory=list)
+    modalidad: ModalidadEntrega = ModalidadEntrega.ENTREGA_DOMICILIO
+    # Datos del traslado (para la nota de remisión, que SAIL no emite: solo registra su número).
+    numero_nota_remision: str | None = None
+    transportista_ruc: str | None = None
+    vehiculo: str | None = None              # marca y chapa
+    conductor_nombre: str | None = None
+    conductor_documento: str | None = None
 
     def puede_marcarse_lista(self) -> bool:
         return self.estado == EstadoOrdenEnvio.PREPARANDO
 
+    def es_retiro(self) -> bool:
+        return self.modalidad == ModalidadEntrega.RETIRA_CLIENTE
+
     def puede_ser_despachada(self) -> bool:
-        return self.estado == EstadoOrdenEnvio.LISTO
+        return self.estado == EstadoOrdenEnvio.LISTO and not self.es_retiro()
 
     def puede_ser_entregada(self) -> bool:
+        """A domicilio: después del despacho. Retiro en el local: cuando está
+        lista para retirar (la entrega descuenta el stock)."""
+        if self.es_retiro():
+            return self.estado == EstadoOrdenEnvio.LISTO_RETIRO
         return self.estado == EstadoOrdenEnvio.EN_TRANSITO
 
     def puede_ser_devuelta(self) -> bool:
@@ -432,7 +517,7 @@ class OrdenEnvio:
     def puede_ser_cancelada(self) -> bool:
         """Solo antes de salir del depósito. Un envío despachado ya descontó
         stock: si vuelve, se registra como devolución (que lo reingresa)."""
-        return self.estado in (EstadoOrdenEnvio.PREPARANDO, EstadoOrdenEnvio.LISTO)
+        return self.estado in (EstadoOrdenEnvio.PREPARANDO, EstadoOrdenEnvio.LISTO, EstadoOrdenEnvio.LISTO_RETIRO)
 
     def puede_ser_eliminada(self) -> bool:
         return self.estado in (EstadoOrdenEnvio.PREPARANDO, EstadoOrdenEnvio.CANCELADO)
@@ -536,6 +621,29 @@ class MovimientoCuentaCorriente:
     referencia: str | None = None
     usuario_id: int | None = None
     created_at: datetime | None = None
+    pedido_cliente_id: int | None = None
+
+
+@dataclass
+class PagoPedido:
+    """Un cobro de un pedido: seña o pago anticipado, rendición del cobro
+    contra entrega, o el saldo cargado a la cuenta corriente al entregar."""
+
+    id: int | None
+    pedido_cliente_id: int
+    tipo: TipoPagoPedido
+    metodo: MetodoPago
+    monto: int
+    referencia: str | None = None
+    caja_turno_id: int | None = None
+    orden_envio_id: int | None = None
+    usuario_id: int | None = None
+    usuario_nombre: str | None = None
+    created_at: datetime | None = None
+    anulado: bool = False
+    anulado_at: datetime | None = None
+    anulado_por: int | None = None
+    motivo_anulacion: str | None = None
 
 
 @dataclass

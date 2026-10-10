@@ -180,6 +180,12 @@ class PedidoClienteModel(Base):
     notas: Mapped[str | None] = mapped_column(Text, nullable=True)
     motivo_cancelacion: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    # Logística y cobro (ver app/domain/enums.py: ModalidadEntrega, FormaPagoPedido, EstadoPagoPedido).
+    modalidad_entrega: Mapped[str] = mapped_column(String(20), default="ENTREGA_DOMICILIO", server_default="ENTREGA_DOMICILIO")
+    forma_pago: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    estado_pago: Mapped[str] = mapped_column(String(20), default="PENDIENTE", server_default="PENDIENTE", index=True)
+    monto_pagado: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    monto_a_cuenta: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
     items: Mapped[list["PedidoClienteItemModel"]] = relationship(
         back_populates="pedido", cascade="all, delete-orphan"
@@ -305,6 +311,13 @@ class OrdenEnvioModel(Base):
     notas: Mapped[str | None] = mapped_column(Text, nullable=True)
     observaciones_entrega: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    modalidad: Mapped[str] = mapped_column(String(20), default="ENTREGA_DOMICILIO", server_default="ENTREGA_DOMICILIO")
+    # Datos del traslado: SAIL no emite la nota de remisión, solo registra su número.
+    numero_nota_remision: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    transportista_ruc: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    vehiculo: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    conductor_nombre: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    conductor_documento: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     items: Mapped[list["OrdenEnvioItemModel"]] = relationship(
         back_populates="orden", cascade="all, delete-orphan"
@@ -428,6 +441,33 @@ class MovimientoCuentaCorrienteModel(Base):
     referencia: Mapped[str | None] = mapped_column(Text, nullable=True)
     usuario_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
+    # Cargo generado al entregar un pedido "a cuenta".
+    pedido_cliente_id: Mapped[int | None] = mapped_column(
+        ForeignKey("pedidos_cliente.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+
+
+class PedidoPagoModel(Base):
+    """Cobros de un pedido: señas, pagos anticipados, rendiciones del cobro
+    contra entrega y el saldo cargado a cuenta corriente al entregar."""
+
+    __tablename__ = "pedido_pagos"
+    __table_args__ = (CheckConstraint("monto > 0", name="ck_pedido_pagos_monto"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    pedido_cliente_id: Mapped[int] = mapped_column(ForeignKey("pedidos_cliente.id", ondelete="RESTRICT"), index=True)
+    tipo: Mapped[str] = mapped_column(String(20))
+    metodo: Mapped[str] = mapped_column(String(20))
+    monto: Mapped[int] = mapped_column(Integer)
+    referencia: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    caja_turno_id: Mapped[int | None] = mapped_column(ForeignKey("caja_turnos.id", ondelete="SET NULL"), nullable=True)
+    orden_envio_id: Mapped[int | None] = mapped_column(ForeignKey("ordenes_envio.id", ondelete="SET NULL"), nullable=True)
+    usuario_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
+    anulado: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    anulado_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    anulado_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True)
+    motivo_anulacion: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class VentaMostradorItemModel(Base):

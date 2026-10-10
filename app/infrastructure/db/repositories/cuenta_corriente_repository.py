@@ -49,6 +49,7 @@ class SqlAlchemyCuentaCorrienteRepository:
             cliente_id=movimiento.cliente_id, tipo=movimiento.tipo.value, monto=movimiento.monto,
             venta_id=movimiento.venta_id, metodo_pago=movimiento.metodo_pago.value if movimiento.metodo_pago else None,
             caja_turno_id=movimiento.caja_turno_id, referencia=movimiento.referencia, usuario_id=movimiento.usuario_id,
+            pedido_cliente_id=movimiento.pedido_cliente_id,
         )
         self._session.add(row)
         self._session.flush()
@@ -121,5 +122,5 @@ class SqlAlchemyCuentaCorrienteRepository:
             id=row.id, cliente_id=row.cliente_id, tipo=TipoMovimientoCuentaCorriente(row.tipo), monto=row.monto,
             venta_id=row.venta_id, metodo_pago=MetodoPago(row.metodo_pago) if row.metodo_pago else None,
             caja_turno_id=row.caja_turno_id, referencia=row.referencia, usuario_id=row.usuario_id,
-            created_at=row.created_at,
+            created_at=row.created_at, pedido_cliente_id=row.pedido_cliente_id,
         )

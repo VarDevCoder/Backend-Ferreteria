@@ -39,6 +39,7 @@ class EstadoPedidoCliente(StrEnum):
     ORDEN_COMPRA = "ORDEN_COMPRA"
     MERCADERIA_RECIBIDA = "MERCADERIA_RECIBIDA"
     LISTO_ENVIO = "LISTO_ENVIO"
+    LISTO_RETIRO = "LISTO_RETIRO"  # preparado: el cliente lo retira en el local
     ENVIADO = "ENVIADO"
     ENTREGADO = "ENTREGADO"
     CANCELADO = "CANCELADO"
@@ -66,7 +67,8 @@ class EstadoOrdenCompra(StrEnum):
 
 class EstadoOrdenEnvio(StrEnum):
     PREPARANDO = "PREPARANDO"
-    LISTO = "LISTO"
+    LISTO = "LISTO"                # listo para despachar (entrega a domicilio)
+    LISTO_RETIRO = "LISTO_RETIRO"  # listo para que el cliente lo retire en el local
     EN_TRANSITO = "EN_TRANSITO"
     ENTREGADO = "ENTREGADO"
     DEVUELTO = "DEVUELTO"
@@ -181,3 +183,35 @@ class ResolucionItemReclamo(StrEnum):
     REPOSICION = "REPOSICION"      # repone la mercadería
     NOTA_CREDITO = "NOTA_CREDITO"  # emite una nota de crédito por un monto
     RECHAZADO = "RECHAZADO"        # no acepta ese ítem: las unidades siguen no vendibles
+
+
+class ModalidadEntrega(StrEnum):
+    """Cómo recibe el cliente un pedido."""
+
+    ENTREGA_DOMICILIO = "ENTREGA_DOMICILIO"  # se le lleva (orden de envío con despacho)
+    RETIRA_CLIENTE = "RETIRA_CLIENTE"        # pasa a buscarlo por el local
+
+
+class FormaPagoPedido(StrEnum):
+    """Cómo se acordó cobrar un pedido."""
+
+    ANTICIPADO = "ANTICIPADO"              # se paga todo antes de entregar ("pagado a retirar / a entregar")
+    CONTRA_ENTREGA = "CONTRA_ENTREGA"      # se cobra al entregar; el repartidor rinde después en caja
+    CUENTA_CORRIENTE = "CUENTA_CORRIENTE"  # al entregar se carga a la cuenta corriente del cliente
+
+
+class EstadoPagoPedido(StrEnum):
+    """Situación del cobro de un pedido (la calcula el backend)."""
+
+    PENDIENTE = "PENDIENTE"          # no se cobró nada
+    PARCIAL = "PARCIAL"              # tiene una seña o pago parcial
+    PAGADO = "PAGADO"                # cobrado por completo
+    A_CUENTA = "A_CUENTA"            # cubierto, con una parte cargada a la cuenta corriente
+    POR_RENDIR = "POR_RENDIR"        # entregado contra entrega: falta que el repartidor rinda en caja
+    SIN_REGISTRO = "SIN_REGISTRO"    # pedido anterior a que SAIL registrara cobros de pedidos
+
+
+class TipoPagoPedido(StrEnum):
+    ANTICIPO = "ANTICIPO"                  # seña o pago anticipado, antes de entregar
+    RENDICION = "RENDICION"                # cobro contra entrega rendido en caja
+    CARGO_CUENTA = "CARGO_CUENTA"          # saldo cargado a la cuenta corriente al entregar
