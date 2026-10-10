@@ -96,10 +96,11 @@ Todos bajo el prefijo `/api/v1` (salvo el chequeo de salud `GET /`).
 | Dashboard | `GET /dashboard` |
 | Catálogo | `/categorias`, `/productos`, `GET /productos/buscar?q=` (caja rápida: código exacto o palabras del nombre) |
 | Contactos | `/clientes`, `/clientes/ciudades`, `/proveedores`, `/proveedor-productos` |
-| Pedidos de cliente | `/pedidos-cliente` — `disponibilidad` (stock vs. pedido), `procesar`, `solicitar-todos?solo_faltantes=`, `comparacion`, `mercaderia-recibida`, `cancelar` |
+| Pedidos de cliente | `/pedidos-cliente` — `disponibilidad` (stock vs. pedido), `procesar`, `solicitar-todos?solo_faltantes=`, `comparacion`, `mercaderia-recibida`, `cancelar`, `condiciones` (domicilio o retiro; anticipado, contra entrega o a cuenta) |
+| Cobros de pedidos | `/pedidos-cliente/{id}/pagos` (señas y pagos anticipados, `anular`), `/pedidos-cliente/{id}/rendir`, `GET /cobros-por-rendir`. Contrato: [`docs/api/logistica.md`](docs/api/logistica.md) |
 | Solicitudes de presupuesto | `/solicitudes-presupuesto` — `ver`, `cotizar`, `sin-stock`, `aceptar`, `rechazar` |
 | Órdenes de compra | `/ordenes-compra` — `enviar`, `confirmar`, `en-transito`, `recibir` (ingresa stock), `cancelar` |
-| Órdenes de envío | `/ordenes-envio` — `lista-despachar`, `despachar` (descuenta stock), `entregar`, `devolver`, `cancelar` |
+| Órdenes de envío | `/ordenes-envio` — `lista-despachar` (o listo para retirar), `despachar` (descuenta stock), `entregar` (en un retiro descuenta stock; registra el cobro del pedido), `devolver`, `cancelar`, `traslado` (nota de remisión, conductor), `hoja` (para imprimir) |
 | Inventario | `/inventario/stock`, `/inventario/movimientos`, `/inventario/kardex/{producto_id}`, `POST /inventario/ajustes` (inventario inicial / conteo físico) |
 | Stock no vendible | `/stock-no-vendible` (marcar averiado, abollado, vencido...) — `reparar`, `descartar`. Contrato: [`docs/api/stock-no-vendible.md`](docs/api/stock-no-vendible.md) |
 | Reclamos al proveedor | `/reclamos-proveedor` — `enviar`, `aceptar`, `rechazar`, `items/{id}/resolver` (reposición, nota de crédito o rechazado), `documentos`, `documento` (para imprimir) |
@@ -184,7 +185,9 @@ FRONTEND_DIR=../Frontend-Ferreteria uvicorn app.main:app --port 8000   # abrir h
   efectivo, débito, crédito, transferencia, QR y pagos mixtos, clientes con cuenta corriente
   (deudas al día y atrasadas), kardex coherente, algunos productos bajo el mínimo, la caja de hoy
   abierta con ventas, pedidos en distintas etapas (recibido, listo para envío, entregado) y unidades
-  no vendibles (averiadas, abolladas, vencidas, con defecto de fábrica) con un reclamo enviado a un proveedor.
+  no vendibles (averiadas, abolladas, vencidas, con defecto de fábrica) con un reclamo enviado a un proveedor, y
+  pedidos con cada forma de entrega y cobro (pagado a retirar, pagado a entregar, con seña, entregado a cuenta,
+  contra entrega por rendir).
   Ver `app/infrastructure/db/demo_historial.py`. Solo inserta lo que falta, así que se puede correr
   varias veces. **No usar en la base de una empresa real**: los usuarios demo tienen contraseña conocida.
   En Vercel, `SEED_DEMO=true` en las variables de entorno lo aplica al arrancar.
