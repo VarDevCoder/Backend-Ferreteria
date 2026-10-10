@@ -45,7 +45,7 @@ from app.infrastructure.db.repositories.flujo_repository import (
     SqlAlchemySolicitudPresupuestoRepository,
 )
 from app.application.services.orden_envio_service import OrdenEnvioService
-from app.infrastructure.db.demo_historial import completar_medios_de_pago, generar_historial
+from app.infrastructure.db.demo_historial import cargar_stock_no_vendible, completar_medios_de_pago, generar_historial
 from app.infrastructure.db.repositories.empresa_repository import SqlAlchemyEmpresaRepository
 from app.infrastructure.db.repositories.usuario_repository import SqlAlchemyUsuarioRepository
 from app.infrastructure.db.session import SessionLocal, engine
@@ -271,6 +271,13 @@ def main(migrar: bool = True) -> None:
                     envios.entregar(orden.id, "Recibido conforme")
             db.commit()
             print("Pedidos de demo en distintas etapas")
+
+        # Unidades averiadas, vencidas, etc. y un reclamo enviado a un proveedor.
+        deposito = usuarios.get_by_email(USUARIOS_DEMO[3][0])
+        no_vendibles = cargar_stock_no_vendible(db, usuario_id=deposito.id if deposito else demo_user.id)
+        db.commit()
+        if no_vendibles:
+            print(f"Stock no vendible de demo: {no_vendibles} registros y un reclamo al proveedor")
 
         print("\nListo. Datos demo sembrados correctamente.")
     except Exception:

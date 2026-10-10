@@ -37,10 +37,17 @@ from app.infrastructure.db.models import (
     MovimientoCuentaCorrienteModel,
     MovimientoInventarioModel,
     ProductoModel,
+    ProveedorModel,
+    ReclamoProveedorItemModel,
+    ReclamoProveedorModel,
+    ResolucionNoVendibleModel,
+    StockNoVendibleModel,
+    UsuarioModel,
     VentaMostradorItemModel,
     VentaMostradorModel,
     VentaPagoModel,
 )
+from app.infrastructure.db.repositories.stock_no_vendible_repository import SqlAlchemyReclamoProveedorRepository
 
 DIAS_DE_HISTORIAL = 42
 FONDO_INICIAL = 300_000
@@ -361,3 +368,121 @@ def completar_medios_de_pago(db: Session, usuario_id: int, semilla: int = 2026) 
         FROM ventas_mostrador v WHERE m.venta_id = v.id
     """))
     return creadas
+
+
+# --- Stock no vendible y reclamo al proveedor ---------------------------------------
+
+# (producto, cantidad, motivo, nota, proveedor, va al reclamo, unidades ya descartadas)
+CASOS_NO_VENDIBLES = [
+    ("Taladro percutor 1/2\"", 1, "DEFECTO_FABRICA", "No enciende; está en garantía", "Distribuidora Central Ferretera", True, 0),
+    ("Martillo carpintero 16oz", 2, "DEFECTO_FABRICA", "Mango rajado de fábrica", "Distribuidora Central Ferretera", True, 0),
+    ("Pintura látex exterior 4L", 3, "ABOLLADO", "Latas golpeadas en la descarga", None, False, 0),
+    ("Silicona transparente 280ml", 4, "VENCIDO", None, None, False, 0),
+    ("Llave térmica 20A", 2, "AVERIADO", "Se cayeron del estante", "ElectroPar Mayorista", False, 0),
+    ("Foco LED 12W", 5, "AVERIADO", "Vidrio roto", None, False, 2),
+]
+ETIQUETA_MOTIVO = {"AVERIADO": "averiado", "ABOLLADO": "abollado", "VENCIDO": "vencido", "DEFECTO_FABRICA": "defecto de fábrica"}
+
+
+def cargar_stock_no_vendible(db: Session, usuario_id: int) -> int:
+    """Algunas unidades no vendibles (averiadas, abolladas, vencidas, con
+    defecto de fábrica; una con parte ya descartada) y un reclamo ENVIADO a un
+    proveedor. Corre una sola vez (si ya hay registros no hace nada) y usa
+    pocas consultas: cada tabla se inserta en un solo lote. Los movimientos
+    quedan con la hora actual, después de todo el historial, para que el
+    kardex siga cuadrando. Devuelve cuántos registros creó."""
+    if db.execute(select(func.count()).select_from(StockNoVendibleModel)).scalar_one():
+        return 0
+    nombres = [caso[0] for caso in CASOS_NO_VENDIBLES]
+    productos = {
+        p.nombre: p
+        for p in db.execute(select(ProductoModel).where(ProductoModel.nombre.in_(nombres)).with_for_update()).scalars()
+    }
+    proveedores = {
+        prov.razon_social: (prov, email)
+        for prov, email in db.execute(
+            select(ProveedorModel, UsuarioModel.email).join(UsuarioModel, UsuarioModel.id == ProveedorModel.user_id)
+        ).all()
+    }
+
+    casos = []
+    for nombre, cantidad, motivo, nota, proveedor, reclamar, descartadas in CASOS_NO_VENDIBLES:
+        producto = productos.get(nombre)
+        cantidad = min(Decimal(cantidad), Decimal(producto.stock_actual or 0)) if producto else Decimal(0)
+        if cantidad <= 0:
+            continue
+        prov = proveedores.get(proveedor, (None, None))[0] if proveedor else None
+        descartadas = min(Decimal(descartadas), cantidad)
+        registro = StockNoVendibleModel(
+            producto_id=producto.id, cantidad=cantidad, cantidad_pendiente=cantidad - descartadas, motivo=motivo,
+            nota=nota, proveedor_id=prov.id if prov else None, costo_unitario=producto.precio_compra,
+            estado="EN_RECLAMO" if reclamar and prov else ("RESUELTO" if descartadas == cantidad else "PENDIENTE"),
+            usuario_id=usuario_id,
+        )
+        casos.append((producto, registro, prov if reclamar else None, descartadas))
+    if not casos:
+        return 0
+    db.add_all([registro for _, registro, _, _ in casos])
+    db.flush()  # un INSERT con todos los registros
+
+    movimientos, resoluciones, nuevos_stocks = [], [], []
+    for producto, registro, _, descartadas in casos:
+        vendible, no_vendible = Decimal(producto.stock_actual), Decimal(producto.stock_no_vendible or 0)
+        detalle = f"Pasa a no vendible ({ETIQUETA_MOTIVO[registro.motivo]})" + (f": {registro.nota}" if registro.nota else "")
+        movimientos.append(MovimientoInventarioModel(
+            producto_id=producto.id, tipo="TRASPASO", cantidad=-registro.cantidad, stock_anterior=vendible,
+            stock_nuevo=vendible - registro.cantidad, no_vendible_anterior=no_vendible,
+            no_vendible_nuevo=no_vendible + registro.cantidad, referencia_tipo="STOCK_NO_VENDIBLE",
+            referencia_id=registro.id, usuario_id=usuario_id, observaciones=detalle,
+        ))
+        vendible, no_vendible = vendible - registro.cantidad, no_vendible + registro.cantidad
+        if descartadas:
+            movimientos.append(MovimientoInventarioModel(
+                producto_id=producto.id, tipo="BAJA", cantidad=descartadas, stock_anterior=vendible, stock_nuevo=vendible,
+                no_vendible_anterior=no_vendible, no_vendible_nuevo=no_vendible - descartadas,
+                referencia_tipo="STOCK_NO_VENDIBLE", referencia_id=registro.id, usuario_id=usuario_id,
+                observaciones="Descarte: baja con pérdida. Sin arreglo posible",
+            ))
+            resoluciones.append(ResolucionNoVendibleModel(
+                registro_id=registro.id, tipo="DESCARTADO", cantidad=descartadas,
+                monto=int(descartadas * registro.costo_unitario), nota="Sin arreglo posible", usuario_id=usuario_id,
+            ))
+            no_vendible -= descartadas
+        nuevos_stocks.append((producto.id, vendible, no_vendible))
+
+    # Reclamo enviado al proveedor con las unidades de defecto de fábrica.
+    reclamar = [(producto, registro, prov) for producto, registro, prov, _ in casos if prov is not None]
+    if reclamar:
+        prov = reclamar[0][2]
+        email = proveedores[prov.razon_social][1]
+        ahora = db.execute(select(func.now())).scalar_one().replace(tzinfo=None)
+        db.add(ReclamoProveedorModel(
+            numero=SqlAlchemyReclamoProveedorRepository(db).siguiente_numero(), proveedor_id=prov.id,
+            usuario_id=usuario_id, proveedor_razon_social=prov.razon_social, proveedor_ruc=prov.ruc,
+            proveedor_telefono=prov.telefono, proveedor_email=email,
+            proveedor_direccion=", ".join(x for x in (prov.direccion, prov.ciudad) if x) or None,
+            estado="ENVIADO", notas="Unidades con defecto de fábrica de la última compra (demo)",
+            numero_nota_remision="001-001-0000457", fecha_envio=ahora,
+            items=[
+                ReclamoProveedorItemModel(
+                    registro_id=registro.id, producto_id=producto.id, cantidad=registro.cantidad_pendiente,
+                    costo_unitario=registro.costo_unitario, monto_nota_credito=0,
+                )
+                for producto, registro, p in reclamar if p.id == prov.id
+            ],
+        ))
+    db.add_all(movimientos + resoluciones)
+    db.flush()  # INSERT en lote de movimientos, resoluciones, reclamo e ítems
+
+    # Stock de todos los productos en un solo UPDATE.
+    valores, parametros = [], {}
+    for n, (producto_id, vendible, no_vendible) in enumerate(nuevos_stocks):
+        valores.append(f"(CAST(:id{n} AS integer), CAST(:v{n} AS numeric), CAST(:nv{n} AS numeric))")
+        parametros.update({f"id{n}": producto_id, f"v{n}": vendible, f"nv{n}": no_vendible})
+    db.execute(text(f"""
+        UPDATE productos p SET stock_actual = s.vendible, stock_no_vendible = s.no_vendible
+        FROM (VALUES {", ".join(valores)}) AS s(id, vendible, no_vendible) WHERE p.id = s.id
+    """), parametros)
+    for producto, *_ in casos:
+        db.expire(producto)
+    return len(casos)
