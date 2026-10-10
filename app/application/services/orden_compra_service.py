@@ -4,6 +4,7 @@ stock, dispara movimientos de inventario y cascada el estado del pedido."""
 from datetime import date
 from decimal import Decimal
 
+from app.application.validaciones import validar_items
 from app.core.tiempo import hoy
 from app.domain.entities import MovimientoInventario, OrdenCompra, OrdenCompraItem
 from app.domain.enums import EstadoOrdenCompra, EstadoPedidoCliente, TipoMovimientoInventario, TipoReferenciaMovimiento
@@ -52,6 +53,7 @@ class OrdenCompraService:
         descuento: int = 0,
         notas: str | None = None,
     ) -> OrdenCompra:
+        validar_items(self._productos, items, campo_cantidad="cantidad_solicitada")
         orden = OrdenCompra(
             id=None,
             numero=self._ordenes.siguiente_numero(),
@@ -95,6 +97,7 @@ class OrdenCompraService:
         orden = self.obtener(orden_id)
         if not orden.puede_ser_editada():
             raise TransicionDeEstadoInvalida("Solo se pueden modificar órdenes en borrador")
+        validar_items(self._productos, items, campo_cantidad="cantidad_solicitada")
 
         orden.proveedor_nombre = proveedor_nombre
         orden.proveedor_ruc = proveedor_ruc
@@ -165,6 +168,7 @@ class OrdenCompraService:
             producto = self._productos.get_by_id(item.producto_id)
             if producto is None:
                 raise RecursoNoEncontrado("Producto", item.producto_id)
+            producto.validar_cantidad(cantidad_recibida)
             stock_anterior = producto.stock_actual
             producto.stock_actual = stock_anterior + cantidad_recibida
             self._productos.update(producto)

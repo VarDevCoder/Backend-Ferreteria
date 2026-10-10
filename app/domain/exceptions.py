@@ -23,10 +23,13 @@ class TransicionDeEstadoInvalida(DomainError):
 
 
 class StockInsuficiente(DomainError):
-    def __init__(self, producto_nombre: str, disponible, requerido):
+    def __init__(self, producto_nombre: str, disponible, requerido, unidad: str | None = None):
+        from app.domain.formato import formato_cantidad
+
+        u = f" {unidad}" if unidad else ""
         super().__init__(
-            f"Stock insuficiente para {producto_nombre}. "
-            f"Disponible: {disponible}, requerido: {requerido}"
+            f"Stock insuficiente para {producto_nombre}: "
+            f"hay {formato_cantidad(disponible)}{u} y se pidieron {formato_cantidad(requerido)}{u}"
         )
 
 

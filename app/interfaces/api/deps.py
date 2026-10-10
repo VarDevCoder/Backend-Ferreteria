@@ -134,8 +134,9 @@ def get_categoria_service(repo: Annotated[SqlAlchemyCategoriaRepository, Depends
 def get_producto_service(
     repo: Annotated[SqlAlchemyProductoRepository, Depends(get_producto_repo)],
     empresa: Annotated[SqlAlchemyEmpresaRepository, Depends(get_empresa_repo)],
+    categorias: Annotated[SqlAlchemyCategoriaRepository, Depends(get_categoria_repo)],
 ) -> ProductoService:
-    return ProductoService(repo, margen_defecto=empresa.get().margen_ganancia_defecto)
+    return ProductoService(repo, margen_defecto=empresa.get().margen_ganancia_defecto, categorias=categorias)
 
 
 def get_cliente_service(repo: Annotated[SqlAlchemyClienteRepository, Depends(get_cliente_repo)]) -> ClienteService:
@@ -151,8 +152,10 @@ def get_proveedor_service(
 
 def get_proveedor_producto_service(
     repo: Annotated[SqlAlchemyProveedorProductoRepository, Depends(get_proveedor_producto_repo)],
+    proveedores: Annotated[SqlAlchemyProveedorRepository, Depends(get_proveedor_repo)],
+    productos: Annotated[SqlAlchemyProductoRepository, Depends(get_producto_repo)],
 ) -> ProveedorProductoService:
-    return ProveedorProductoService(repo)
+    return ProveedorProductoService(repo, proveedores, productos)
 
 
 def get_pedido_cliente_service(
@@ -232,8 +235,9 @@ def get_caja_service(
     productos: Annotated[SqlAlchemyProductoRepository, Depends(get_producto_repo)],
     movimientos: Annotated[SqlAlchemyMovimientoInventarioRepository, Depends(get_movimiento_repo)],
     cuenta_corriente: Annotated[CuentaCorrienteService, Depends(get_cuenta_corriente_service)],
+    clientes: Annotated[SqlAlchemyClienteRepository, Depends(get_cliente_repo)],
 ) -> CajaService:
-    return CajaService(turnos, ventas, productos, movimientos, cuenta_corriente)
+    return CajaService(turnos, ventas, productos, movimientos, cuenta_corriente, clientes)
 
 
 def get_dashboard_service(

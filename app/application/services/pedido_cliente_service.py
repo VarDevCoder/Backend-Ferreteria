@@ -7,6 +7,7 @@ from app.core.tiempo import hoy
 from app.domain.entities import PedidoCliente, PedidoClienteItem, SolicitudPresupuesto, SolicitudPresupuestoItem
 from app.domain.enums import EstadoPedidoCliente, EstadoSolicitudPresupuesto
 from app.application.services.caja_service import validar_descuento
+from app.application.validaciones import validar_items
 from app.domain.exceptions import PermisoDenegado, RecursoNoEncontrado, SolicitudInvalida, TransicionDeEstadoInvalida
 from app.domain.repositories import (
     ClienteRepository,
@@ -59,11 +60,14 @@ class PedidoClienteService:
         descuento_maximo: int = 100,
     ) -> PedidoCliente:
         validar_descuento(descuento, descuento_maximo)
+        validar_items(self._productos, items, para_vender=True)
         if not puede_cambiar_precios:
             self._validar_precios(items)
         # Si se eligió un cliente del catálogo, tomamos su snapshot actual (igual que Laravel)
         if cliente_id is not None:
             cliente = self._clientes.get_by_id(cliente_id)
+            if cliente is None:
+                raise RecursoNoEncontrado("Cliente", cliente_id)
             if cliente is not None:
                 cliente_nombre = cliente.nombre
                 cliente_ruc = cliente.ruc
@@ -118,6 +122,9 @@ class PedidoClienteService:
             raise TransicionDeEstadoInvalida("Esta solicitud no puede ser modificada")
         if descuento != pedido.descuento:
             validar_descuento(descuento, descuento_maximo)
+        validar_items(self._productos, items, para_vender=True)
+        if cliente_id is not None and self._clientes.get_by_id(cliente_id) is None:
+            raise RecursoNoEncontrado("Cliente", cliente_id)
         if not puede_cambiar_precios:
             # Se puede mantener el precio ya pactado en el pedido (lo fijó un encargado).
             self._validar_precios(items, ya_pactados={i.producto_id: i.precio_unitario for i in pedido.items})

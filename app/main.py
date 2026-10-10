@@ -7,7 +7,7 @@ import logging
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import DBAPIError
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.application.permisos import Modulo
@@ -57,6 +57,8 @@ app = FastAPI(
 
 log = logging.getLogger(__name__)
 
+_MENSAJE_ERROR_INESPERADO = "Ocurrió un error inesperado en el servidor. Si se repite, avisá al administrador"
+
 
 async def _error_inesperado_como_json(request: Request, call_next):
     """Cualquier error no previsto responde 500 en JSON. Va *dentro* de CORS
@@ -68,7 +70,7 @@ async def _error_inesperado_como_json(request: Request, call_next):
         log.exception("Error inesperado en %s %s", request.method, request.url.path)
         return JSONResponse(
             status_code=500,
-            content={"detail": "Ocurrió un error inesperado en el servidor. Si se repite, avisá al administrador"},
+            content={"detail": _MENSAJE_ERROR_INESPERADO},
         )
 
 
@@ -103,15 +105,29 @@ def manejar_error_de_dominio(_request: Request, exc: DomainError) -> JSONRespons
 
 
 
-@app.exception_handler(IntegrityError)
-def manejar_conflicto_de_base(_request: Request, exc: IntegrityError) -> JSONResponse:
-    """Red de seguridad: los servicios validan duplicados y borrados con
-    historial, pero si la base rechaza algo igual se responde 409 y no 500."""
-    log.warning("Conflicto de integridad: %s", exc.orig)
-    return JSONResponse(
-        status_code=409,
-        content={"detail": "No se pudo guardar: el dato ya existe o está en uso en otros registros"},
-    )
+def _codigo_postgres(exc: DBAPIError) -> str | None:
+    detalle = getattr(exc.orig, "args", [None])[0]
+    return (detalle.get("C") if isinstance(detalle, dict) else None) or getattr(exc.orig, "pgcode", None)
+
+
+@app.exception_handler(DBAPIError)
+def manejar_error_de_base(_request: Request, exc: DBAPIError) -> JSONResponse:
+    """Red de seguridad: los servicios validan duplicados, ids y borrados con
+    historial, pero si la base rechaza algo igual se responde 409/422 y no
+    500. (pg8000 informa la clave foránea como ProgrammingError, por eso se
+    mira el código de Postgres y no la clase.)"""
+    codigo = _codigo_postgres(exc)
+    if codigo == "23505":  # valor único repetido
+        log.warning("Dato repetido: %s", exc.orig)
+        return JSONResponse(status_code=409, content={"detail": "No se pudo guardar: el dato ya existe en otro registro"})
+    if codigo in ("23503", "23502", "23514"):  # clave foránea, NOT NULL, CHECK
+        log.warning("Dato inválido para la base: %s", exc.orig)
+        return JSONResponse(
+            status_code=422,
+            content={"detail": "No se pudo guardar: algún dato hace referencia a un registro que no existe o está en uso"},
+        )
+    log.exception("Error de base de datos")
+    return JSONResponse(status_code=500, content={"detail": _MENSAJE_ERROR_INESPERADO})
 
 
 def _protegido(modulo: Modulo | None = None) -> list:

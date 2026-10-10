@@ -5,7 +5,9 @@ deja su movimiento en el Kardex, igual que la recepción de compra.
 """
 from decimal import Decimal
 
+from app.application.validaciones import validar_items
 from app.core.tiempo import hoy
+from app.domain.formato import formato_cantidad
 from app.domain.entities import MovimientoInventario, OrdenEnvio, OrdenEnvioItem
 from app.domain.enums import EstadoOrdenEnvio, EstadoPedidoCliente, TipoMovimientoInventario, TipoReferenciaMovimiento
 from app.domain.exceptions import (
@@ -61,6 +63,7 @@ class OrdenEnvioService:
             raise RecursoNoEncontrado("PedidoCliente", pedido_cliente_id)
         if not pedido.puede_generar_orden_envio():
             raise TransicionDeEstadoInvalida("Este pedido no puede generar orden de envío")
+        validar_items(self._productos, items)
         if pedido.estado != EstadoPedidoCliente.MERCADERIA_RECIBIDA:
             self._validar_stock_para(pedido)
 
@@ -121,7 +124,7 @@ class OrdenEnvioService:
             stock_anterior = producto.stock_actual
             stock_nuevo = stock_anterior - item.cantidad
             if stock_nuevo < 0:
-                raise StockInsuficiente(producto.nombre, stock_anterior, item.cantidad)
+                raise StockInsuficiente(producto.nombre, stock_anterior, item.cantidad, producto.unidad_medida)
 
             producto.stock_actual = stock_nuevo
             self._productos.update(producto)
@@ -215,7 +218,10 @@ class OrdenEnvioService:
             if producto is None:
                 raise RecursoNoEncontrado("Producto", producto_id)
             if producto.stock_actual < requerida:
-                faltantes.append(f"{producto.nombre} (hay {producto.stock_actual.normalize():f}, pide {requerida.normalize():f})")
+                faltantes.append(
+                    f"{producto.nombre} (hay {formato_cantidad(producto.stock_actual)} {producto.unidad_medida}, "
+                    f"pide {formato_cantidad(requerida)} {producto.unidad_medida})"
+                )
         if faltantes:
             raise StockInsuficienteParaPedido(faltantes)
 

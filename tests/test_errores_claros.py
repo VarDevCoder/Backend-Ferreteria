@@ -79,3 +79,15 @@ def test_conflicto_de_la_base_responde_409(client, monkeypatch):
     r = _post(client, admin, "/categorias", {"nombre": "Pinturas"})
     assert r.status_code == 409
     assert r.headers.get("access-control-allow-origin") == ORIGEN
+
+
+def test_referencia_inexistente_que_llega_a_la_base_responde_422(client, monkeypatch):
+    """Si un id inexistente se escapa de las validaciones, la clave foránea de
+    la base responde 422 (QA-N2), no 500."""
+    admin = configurar(client)
+    from app.application.services.catalogo_service import ProductoService
+
+    monkeypatch.setattr(ProductoService, "_validar_categoria", lambda *_a: None)
+    r = _post(client, admin, "/productos", {"nombre": "X", "precio_compra": 1, "categoria_id": 9999})
+    assert r.status_code == 422 and "no existe" in r.json()["detail"]
+    assert r.headers.get("access-control-allow-origin") == ORIGEN

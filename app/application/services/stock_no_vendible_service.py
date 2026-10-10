@@ -166,8 +166,9 @@ class StockNoVendibleService:
         producto = self._registros.bloquear_producto(producto_id)
         if producto is None:
             raise RecursoNoEncontrado("Producto", producto_id)
+        producto.validar_cantidad(cantidad)  # pz, caja...: solo unidades enteras
         if cantidad > producto.stock_actual:
-            raise StockInsuficiente(producto.nombre, _fmt(producto.stock_actual), _fmt(cantidad))
+            raise StockInsuficiente(producto.nombre, producto.stock_actual, cantidad, producto.unidad_medida)
 
         registro = self._registros.add(StockNoVendible(
             id=None, producto_id=producto_id, cantidad=cantidad, cantidad_pendiente=cantidad, motivo=motivo_ok,

@@ -20,6 +20,7 @@ from app.domain.exceptions import (
 )
 from app.domain.repositories import (
     CajaTurnoRepository,
+    ClienteRepository,
     MovimientoInventarioRepository,
     ProductoRepository,
     VentaMostradorRepository,
@@ -41,12 +42,14 @@ class CajaService:
         productos: ProductoRepository,
         movimientos: MovimientoInventarioRepository,
         cuenta_corriente: CuentaCorrienteService | None = None,
+        clientes: ClienteRepository | None = None,
     ):
         self._turnos = turnos
         self._ventas = ventas
         self._productos = productos
         self._movimientos = movimientos
         self._cuenta_corriente = cuenta_corriente
+        self._clientes = clientes
 
     # --- Turnos ------------------------------------------------------------
 
@@ -131,6 +134,8 @@ class CajaService:
         if not items:
             raise SolicitudInvalida("La venta debe tener al menos un ítem")
         validar_descuento(descuento, descuento_maximo)
+        if cliente_id is not None and self._clientes is not None and self._clientes.get_by_id(cliente_id) is None:
+            raise RecursoNoEncontrado("Cliente", cliente_id)
         self._productos.bloquear(i["producto_id"] for i in items)
 
         venta_items = []
@@ -144,9 +149,11 @@ class CajaService:
             cantidad = Decimal(str(i["cantidad"]))
             if cantidad <= 0:
                 raise SolicitudInvalida(f"La cantidad de {producto.nombre} debe ser mayor a cero")
+            producto.validar_vendible()
+            producto.validar_cantidad(cantidad)
             total_pedido = pedido_por_producto.get(producto.id, Decimal("0")) + cantidad
             if producto.stock_actual < total_pedido:
-                raise StockInsuficiente(producto.nombre, producto.stock_actual, total_pedido)
+                raise StockInsuficiente(producto.nombre, producto.stock_actual, total_pedido, producto.unidad_medida)
             pedido_por_producto[producto.id] = total_pedido
 
             precio = i.get("precio_unitario")

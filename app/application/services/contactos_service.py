@@ -4,6 +4,7 @@ from app.domain.enums import RolUsuario
 from app.domain.exceptions import ConflictoDeUnicidad, RecursoNoEncontrado, SolicitudInvalida
 from app.domain.repositories import (
     ClienteRepository,
+    ProductoRepository,
     ProveedorProductoRepository,
     ProveedorRepository,
     UsuarioRepository,
@@ -136,8 +137,13 @@ class ProveedorService:
 
 
 class ProveedorProductoService:
-    def __init__(self, items: ProveedorProductoRepository):
+    def __init__(
+        self, items: ProveedorProductoRepository, proveedores: ProveedorRepository | None = None,
+        productos: ProductoRepository | None = None,
+    ):
         self._items = items
+        self._proveedores = proveedores
+        self._productos = productos
 
     def listar(
         self, proveedor_id: int | None = None, producto_id: int | None = None, disponible: bool | None = None
@@ -154,6 +160,10 @@ class ProveedorProductoService:
         tiempo_entrega_dias: int | None = None,
         notas: str | None = None,
     ) -> ProveedorProducto:
+        if self._proveedores is not None and self._proveedores.get_by_id(proveedor_id) is None:
+            raise RecursoNoEncontrado("Proveedor", proveedor_id)
+        if self._productos is not None and self._productos.get_by_id(producto_id) is None:
+            raise RecursoNoEncontrado("Producto", producto_id)
         if self._items.existe(proveedor_id, producto_id):
             raise ConflictoDeUnicidad("Ese producto ya está en el catálogo de este proveedor. Editalo en su lugar.")
         item = ProveedorProducto(

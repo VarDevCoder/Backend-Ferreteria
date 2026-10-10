@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal
 
+from app.domain.exceptions import SolicitudInvalida
 from app.domain.enums import (
     EstadoCajaTurno,
     EstadoOrdenCompra,
@@ -84,6 +85,12 @@ class Categoria:
     orden: int = 0
 
 
+# Unidades que se venden fraccionadas (por ejemplo 2,5 m de cable o 1,25 kg
+# de clavos). Cualquier otra (pz, unidad, caja, bolsa, rollo, lata...) solo
+# admite cantidades enteras.
+UNIDADES_FRACCIONABLES = frozenset({"m", "kg", "lt", "l"})
+
+
 @dataclass
 class Producto:
     id: int | None
@@ -105,6 +112,24 @@ class Producto:
     def stock_total(self) -> Decimal:
         """Unidades físicas: vendibles más no vendibles."""
         return Decimal(self.stock_actual) + Decimal(self.stock_no_vendible or 0)
+
+    def es_fraccionable(self) -> bool:
+        return (self.unidad_medida or "").strip().lower() in UNIDADES_FRACCIONABLES
+
+    def validar_cantidad(self, cantidad) -> None:
+        """Las unidades enteras (pz, caja...) no aceptan decimales."""
+        valor = Decimal(str(cantidad))
+        if not self.es_fraccionable() and valor != valor.to_integral_value():
+            from app.domain.formato import formato_cantidad
+
+            raise SolicitudInvalida(
+                f"{self.nombre} se vende por unidad entera ({self.unidad_medida}): "
+                f"no se puede usar {formato_cantidad(valor)}"
+            )
+
+    def validar_vendible(self) -> None:
+        if not self.activo:
+            raise SolicitudInvalida(f"{self.nombre} está desactivado: no se puede vender ni pedir")
 
     def tiene_stock_bajo(self) -> bool:
         return self.stock_minimo > 0 and self.stock_actual <= self.stock_minimo

@@ -56,6 +56,8 @@ class ProductoResponse(BaseModel):
     activo: bool
     stock_bajo: bool
     margen: float
+    # Si admite cantidades con decimales (m, kg, lt); si no, solo enteras.
+    fraccionable: bool = False
     stock_no_vendible: float = 0  # averiado, vencido, etc. (existe pero no se vende)
     stock_total: float = 0        # vendible + no vendible
 
@@ -65,6 +67,6 @@ class ProductoResponse(BaseModel):
             id=p.id, codigo=p.codigo, nombre=p.nombre, descripcion=p.descripcion, categoria_id=p.categoria_id,
             precio_compra=p.precio_compra, precio_venta=p.precio_venta, stock_actual=float(p.stock_actual),
             stock_minimo=float(p.stock_minimo), unidad_medida=p.unidad_medida, activo=p.activo,
-            stock_bajo=p.tiene_stock_bajo(), margen=p.margen(),
+            stock_bajo=p.tiene_stock_bajo(), margen=p.margen(), fraccionable=p.es_fraccionable(),
             stock_no_vendible=float(p.stock_no_vendible or 0), stock_total=float(p.stock_total()),
         )

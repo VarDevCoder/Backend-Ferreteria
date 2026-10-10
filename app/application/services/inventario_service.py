@@ -36,6 +36,7 @@ class InventarioService:
         stock_nuevo = Decimal(str(stock_nuevo))
         if stock_nuevo < 0:
             raise SolicitudInvalida("El stock no puede ser negativo")
+        producto.validar_cantidad(stock_nuevo)
         if not motivo or not motivo.strip():
             raise SolicitudInvalida("Indicá el motivo del ajuste")
         stock_anterior = producto.stock_actual

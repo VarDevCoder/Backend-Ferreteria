@@ -46,8 +46,12 @@ class CategoriaService:
 
 
 class ProductoService:
-    def __init__(self, productos: ProductoRepository, margen_defecto: int | Decimal = MARGEN_VENTA_PORCENTAJE):
+    def __init__(
+        self, productos: ProductoRepository, margen_defecto: int | Decimal = MARGEN_VENTA_PORCENTAJE,
+        categorias: CategoriaRepository | None = None,
+    ):
         self._productos = productos
+        self._categorias = categorias
         # Margen que se aplica cuando se crea un producto sin precio de venta
         # (configurable por empresa).
         self._margen_defecto = Decimal(margen_defecto)
@@ -77,6 +81,7 @@ class ProductoService:
         unidad_medida: str,
         codigo: str | None = None,
     ) -> Producto:
+        self._validar_categoria(categoria_id)
         codigo = codigo.strip() if codigo else None
         if codigo and self._productos.get_by_codigo(codigo) is not None:
             raise ConflictoDeUnicidad(f"Ya existe un producto con el código {codigo}")
@@ -110,6 +115,7 @@ class ProductoService:
         activo: bool,
     ) -> Producto:
         actual = self.obtener(producto_id)
+        self._validar_categoria(categoria_id)
         actual.nombre = nombre
         actual.descripcion = descripcion
         actual.categoria_id = categoria_id
@@ -119,6 +125,10 @@ class ProductoService:
         actual.unidad_medida = unidad_medida
         actual.activo = activo
         return self._productos.update(actual)
+
+    def _validar_categoria(self, categoria_id: int | None) -> None:
+        if categoria_id is not None and self._categorias is not None and self._categorias.get_by_id(categoria_id) is None:
+            raise RecursoNoEncontrado("Categoría", categoria_id)
 
     def eliminar(self, producto_id: int) -> None:
         producto = self.obtener(producto_id)

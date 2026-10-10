@@ -20,12 +20,12 @@ def test_recepcion_parcial_y_completa_suma_stock(client):
     oc = _orden_confirmada(client, admin, p, 5)
     item = oc["items"][0]["id"]
 
-    r = client.post(f"{API}/ordenes-compra/{oc['id']}/recibir", headers=auth(admin), json={"cantidades": {str(item): 2.5}})
+    r = client.post(f"{API}/ordenes-compra/{oc['id']}/recibir", headers=auth(admin), json={"cantidades": {str(item): 2.0}})
     assert r.status_code == 200, r.text
     assert r.json()["estado"] == "RECIBIDA_PARCIAL"
-    assert stock(client, admin, p) == 2.5
+    assert stock(client, admin, p) == 2
 
-    r = client.post(f"{API}/ordenes-compra/{oc['id']}/recibir", headers=auth(admin), json={"cantidades": {str(item): 2.5}})
+    r = client.post(f"{API}/ordenes-compra/{oc['id']}/recibir", headers=auth(admin), json={"cantidades": {str(item): 3.0}})
     assert r.status_code == 200, r.text
     assert r.json()["estado"] == "RECIBIDA_COMPLETA"
     assert stock(client, admin, p) == 5
