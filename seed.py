@@ -37,9 +37,12 @@ from app.infrastructure.db.repositories.contactos_repository import (
 from app.infrastructure.db.repositories.flujo_repository import (
     SqlAlchemyMovimientoInventarioRepository,
     SqlAlchemyOrdenCompraRepository,
+    SqlAlchemyOrdenEnvioRepository,
     SqlAlchemyPedidoClienteRepository,
     SqlAlchemySolicitudPresupuestoRepository,
 )
+from app.application.services.orden_envio_service import OrdenEnvioService
+from app.infrastructure.db.demo_historial import generar_historial
 from app.infrastructure.db.repositories.empresa_repository import SqlAlchemyEmpresaRepository
 from app.infrastructure.db.repositories.usuario_repository import SqlAlchemyUsuarioRepository
 from app.infrastructure.db.session import SessionLocal, engine
@@ -52,6 +55,38 @@ USUARIOS_DEMO = [
     ("encargado@ferreteria.local", "Encargado Demo", RolUsuario.ENCARGADO),
     ("vendedor@ferreteria.local", "Vendedor Demo", RolUsuario.VENDEDOR),
     ("deposito@ferreteria.local", "Depósito Demo", RolUsuario.DEPOSITO),
+]
+
+CATEGORIAS_EXTRA = [
+    ("Pinturería", "Pinturas, rodillos y accesorios", 4),
+    ("Bulonería", "Tornillos, bulones, clavos y tarugos", 5),
+    ("Construcción", "Materiales de obra", 6),
+]
+# nombre, categoría, precio de compra (Gs.), stock mínimo, unidad
+PRODUCTOS_EXTRA = [
+    ("Pintura látex interior blanco 20L", "Pinturería", 210000, 4, "balde"),
+    ("Pintura látex exterior 4L", "Pinturería", 85000, 6, "lata"),
+    ("Rodillo antigota 23cm", "Pinturería", 18000, 10, "pz"),
+    ("Pincel 2\"", "Pinturería", 9000, 15, "pz"),
+    ("Lija al agua N°120", "Pinturería", 2500, 50, "pz"),
+    ("Silicona transparente 280ml", "Ferretería general", 14000, 12, "pz"),
+    ("Clavos 2\" (kg)", "Bulonería", 12000, 10, "kg"),
+    ("Bulón 1/4\" x 2\" con tuerca", "Bulonería", 800, 200, "pz"),
+    ("Tarugo N°8 (bolsa 100)", "Bulonería", 9000, 10, "bolsa"),
+    ("Destornillador Phillips PH2", "Ferretería general", 15000, 6, "pz"),
+    ("Alicate universal 8\"", "Ferretería general", 38000, 5, "pz"),
+    ("Cinta métrica 5m", "Ferretería general", 22000, 6, "pz"),
+    ("Amoladora angular 4 1/2\" 850W", "Ferretería general", 320000, 2, "pz"),
+    ("Disco de corte 4 1/2\"", "Ferretería general", 6000, 25, "pz"),
+    ("Foco LED 12W", "Electricidad", 9500, 30, "pz"),
+    ("Tomacorriente doble", "Electricidad", 12000, 15, "pz"),
+    ("Codo PVC 1/2\"", "Plomería", 2500, 40, "pz"),
+    ("Cemento portland 50kg", "Construcción", 62000, 20, "bolsa"),
+]
+CLIENTES_EXTRA = [
+    {"nombre": "Juan Benítez", "ruc": "4567890-1", "telefono": "0971555111", "email": None, "direccion": "Barrio Obrero", "ciudad": "Asunción"},
+    {"nombre": "Constructora Mbaretê S.R.L.", "ruc": "80055511-3", "telefono": "0981777222", "email": "obras@mbarete.com.py", "direccion": "Ruta Transchaco km 12", "ciudad": "Mariano Roque Alonso"},
+    {"nombre": "Electricista Ramón Ortiz", "ruc": "3456789-0", "telefono": "0991444333", "email": None, "direccion": "Calle Palma 455", "ciudad": "Fernando de la Mora"},
 ]
 
 
@@ -161,6 +196,62 @@ def main() -> None:
             print(f"Pedido demo creado: {pedido_demo.numero}")
 
         db.commit()
+
+        # Catálogo y clientes más completos: con 8 productos la demo se ve vacía.
+        cats = {c.nombre: c for c in categorias_repo.list()}
+        for nombre, descripcion, orden in CATEGORIAS_EXTRA:
+            if nombre not in cats:
+                cats[nombre] = categorias.crear(nombre, descripcion, orden)
+        existentes = {p.nombre for p in productos_repo.list()}
+        nuevos = 0
+        for nombre, categoria, compra, minimo, unidad in PRODUCTOS_EXTRA:
+            if nombre not in existentes:
+                productos.crear(nombre, None, cats[categoria].id, compra, None, minimo, unidad)
+                nuevos += 1
+        nombres_clientes = {c.nombre for c in clientes_repo.list()}
+        for datos in CLIENTES_EXTRA:
+            if datos["nombre"] not in nombres_clientes:
+                clientes.crear(**datos, notas=None)
+        db.commit()
+        if nuevos:
+            print(f"{nuevos} productos más en el catálogo de demo")
+
+        # Varias semanas de ventas, con stock y caja coherentes.
+        vendedor = usuarios.get_by_email(USUARIOS_DEMO[2][0])
+        ventas = generar_historial(db, usuario_id=demo_user.id, vendedor_id=vendedor.id if vendedor else None)
+        db.commit()
+        if ventas:
+            print(f"Historial de demo: {ventas} ventas de mostrador")
+
+        # Pedidos de clientes en distintas etapas (uno entregado y uno listo para enviar, desde stock).
+        if len(pedidos_repo.list()) < 3:
+            envios = OrdenEnvioService(
+                SqlAlchemyOrdenEnvioRepository(db), productos_repo, SqlAlchemyMovimientoInventarioRepository(db), pedidos_repo
+            )
+            por_nombre = {p.nombre: p for p in productos_repo.list()}
+            for cliente, lineas, entregar in [
+                (cliente_2, [("Cemento portland 50kg", 10), ("Caño PVC 1/2\" (barra 6m)", 12)], True),
+                (cliente_1, [("Pintura látex interior blanco 20L", 2), ("Rodillo antigota 23cm", 3)], False),
+            ]:
+                items = [
+                    {"producto_id": por_nombre[n].id, "cantidad": c, "precio_unitario": por_nombre[n].precio_venta}
+                    for n, c in lineas if n in por_nombre and por_nombre[n].stock_actual >= c
+                ]
+                if not items:
+                    continue
+                pedido = pedidos.crear(usuario_id=demo_user.id, items=items, cliente_id=cliente.id, fecha_pedido=date.today())
+                orden = envios.crear(
+                    usuario_id=demo_user.id, pedido_cliente_id=pedido.id, direccion_entrega=cliente.direccion or "A coordinar",
+                    items=[{"producto_id": i["producto_id"], "cantidad": i["cantidad"]} for i in items],
+                    contacto_entrega=cliente.nombre, telefono_entrega=cliente.telefono, metodo_envio="Camión propio",
+                )
+                if entregar:
+                    envios.marcar_lista_despacho(orden.id)
+                    envios.despachar(orden.id, None, demo_user.id)
+                    envios.entregar(orden.id, "Recibido conforme")
+            db.commit()
+            print("Pedidos de demo en distintas etapas")
+
         print("\nListo. Datos demo sembrados correctamente.")
     except Exception:
         db.rollback()

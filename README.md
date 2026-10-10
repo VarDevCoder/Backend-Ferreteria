@@ -152,9 +152,13 @@ espera pg8000. Usar el host con `-pooler` para la app.
   Para un cambio de modelo: `alembic revision --autogenerate -m "descripcion"` y revisar el archivo generado.
 - **Datos de demo:** `python seed.py --demo` (o `SEED_DEMO=true`) crea la empresa "Ferretería Demo",
   un usuario por rol (`demo@`, `encargado@`, `vendedor@`, `deposito@ferreteria.local`, contraseña
-  `demo12345`), 3 categorías, 8 productos con stock inicial, 2 clientes, 2 proveedores con su
-  catálogo y un pedido avanzado en el flujo. Solo inserta lo que falta, así que se puede correr varias veces.
-  **No usar en la base de una empresa real**: los usuarios demo tienen contraseña conocida.
+  `demo12345`), un catálogo de ~26 productos en 6 categorías, clientes, proveedores con su catálogo y
+  **unas 6 semanas de operación**: turnos de caja diarios con arqueo, ~350 ventas de mostrador con
+  efectivo/tarjeta/transferencia, kardex coherente, algunos productos bajo el mínimo, la caja de hoy
+  abierta con ventas y pedidos en distintas etapas (recibido, listo para envío, entregado).
+  Ver `app/infrastructure/db/demo_historial.py`. Solo inserta lo que falta, así que se puede correr
+  varias veces. **No usar en la base de una empresa real**: los usuarios demo tienen contraseña conocida.
+  En Vercel, `SEED_DEMO=true` en las variables de entorno lo aplica al arrancar.
 - `python seed.py --demo --reset` **borra todo el esquema** y lo vuelve a crear. No usar contra producción.
 
 ## Despliegue en Vercel
