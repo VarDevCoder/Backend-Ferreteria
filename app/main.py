@@ -3,6 +3,7 @@ traduce las excepciones de dominio a respuestas HTTP — así los routers nunca
 necesitan un try/except: lanzan la excepción de negocio y este módulo decide
 el código de estado."""
 import logging
+from pathlib import Path
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -41,8 +42,10 @@ from app.interfaces.api.routers import (
     stock_no_vendible,
     usuarios,
 )
+from app.interfaces.web.frontend import montar_frontend, resolver_directorio
 
 settings = get_settings()
+_RAIZ_PROYECTO = Path(__file__).resolve().parent.parent
 
 app = FastAPI(
     title=settings.app_name,
@@ -159,10 +162,20 @@ app.include_router(reportes.router, prefix=API, dependencies=_protegido(Modulo.R
 app.include_router(usuarios.router, prefix=API, dependencies=_protegido(Modulo.USUARIOS))
 
 
-@app.get("/", tags=["Salud"], summary="Chequeo de salud")
 def salud(request: Request) -> dict:
     respuesta = {"status": "ok", "app": settings.app_name}
     demo = getattr(request.app.state, "demo", None)  # lo deja api/index.py (Vercel)
     if demo is not None:
         respuesta["demo"] = demo
     return respuesta
+
+
+# Chequeo de salud: siempre en /api/v1/salud. En `/` también, salvo en el
+# servidor único (FRONTEND_DIR), donde `/` muestra las pantallas del sistema.
+app.add_api_route(f"{API}/salud", salud, methods=["GET"], tags=["Salud"], summary="Chequeo de salud")
+
+_frontend = resolver_directorio(settings.frontend_dir, _RAIZ_PROYECTO)
+if _frontend is None:
+    app.add_api_route("/", salud, methods=["GET"], tags=["Salud"], summary="Chequeo de salud")
+else:
+    montar_frontend(app, _frontend)  # va último: lo que no es API lo atiende el frontend

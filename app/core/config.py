@@ -51,6 +51,12 @@ class Settings(BaseSettings):
     # ahí el cliente podría inventar esa cabecera.
     ip_desde_x_forwarded_for: bool = True
 
+    # Servidor único: carpeta del frontend (absoluta o relativa a la raíz del
+    # backend). Si está definida, `/` muestra las pantallas y la API sigue en
+    # /api/v1 en el mismo origen (sin CORS). Vacía = solo API (como en Vercel
+    # con el frontend en Netlify). Ver app/interfaces/web/frontend.py.
+    frontend_dir: str = ""
+
     @property
     def es_produccion(self) -> bool:
         return self.environment.lower() == "production"

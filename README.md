@@ -143,12 +143,34 @@ TEST_DATABASE_URL=postgresql+pg8000://user:pass@localhost:5432/ferreteria_test p
 | `SEED_DEMO` | `true` carga la ferretería de ejemplo al arrancar; `false` para una empresa real | `false` |
 | `APP_NAME` | Nombre que devuelve `GET /` y título de `/docs` | `SAIL API` |
 | `ENVIRONMENT` | `development` / `production` | `production` |
+| `FRONTEND_DIR` | **Servidor único**: carpeta del frontend (absoluta o relativa a este repo). Si está, `/` muestra las pantallas y la API queda en `/api/v1` en el mismo origen, sin CORS | `frontend` |
+| `IP_DESDE_X_FORWARDED_FOR` | Tomar la IP del cliente de `X-Forwarded-For` (bloqueo de login). `true` detrás de Vercel; **`false` en una PC sin proxy** (instalación Windows) | `true` |
 
 **URL de Neon:** copiar el *Connection string* del dashboard de Neon y cambiar el prefijo
 `postgresql://` por `postgresql+pg8000://`. Los parámetros de SSL se aceptan tal como
 vienen (`sslmode=require`, `channel_binding=require`) o como `ssl_context=true`:
 `app/infrastructure/db/session.py` los convierte en un `ssl.SSLContext`, que es lo que
 espera pg8000. Usar el host con `-pooler` para la app.
+
+## Servidor único (backend + frontend en una sola dirección)
+
+**En simple:** el mismo servidor muestra las pantallas y atiende la API. Es la base de la
+instalación en Windows (`http://localhost:7245`) y de las instancias en la nube por cliente.
+
+```bash
+FRONTEND_DIR=../Frontend-Ferreteria uvicorn app.main:app --port 8000   # abrir http://127.0.0.1:8000
+```
+
+- `/` y todos los archivos del frontend (`/login.html`, `/assets/...`) salen de `FRONTEND_DIR`;
+  la API sigue en `/api/v1`, y `/docs` y `/redoc` igual que siempre.
+- El chequeo de salud está **siempre** en `GET /api/v1/salud` (`{"status":"ok",...}`). Sin
+  `FRONTEND_DIR`, `GET /` también lo responde (como hasta ahora en Vercel).
+- `/assets/js/env.js` se sirve con una línea agregada al final que fija la URL de la API al
+  mismo origen (`window.location.origin + "/api/v1"`). El frontend no necesita cambios: en
+  Netlify y en local (puerto 55NN → backend 80NN) env.js sigue funcionando como antes.
+- Se sirve con `Cache-Control: no-cache` (revalida con ETag, así nadie queda con JavaScript
+  viejo después de actualizar) y nunca se sirven archivos ocultos (`.git`...).
+- Código: `app/interfaces/web/frontend.py`; tests: `tests/test_servidor_unico.py`.
 
 ## Base de datos
 
