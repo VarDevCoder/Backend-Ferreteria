@@ -56,6 +56,8 @@ class IntentoLoginFallidoModel(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     email: Mapped[str] = mapped_column(String(255), index=True)
+    # IP del cliente: el bloqueo es por email + IP, así nadie deja afuera a otro.
+    ip: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
 
 

@@ -1,5 +1,7 @@
 """Casos de uso de cuentas del personal: ingreso, cambio de contraseña y
 administración de usuarios (solo admin)."""
+import time
+
 from app.domain.entities import Usuario
 from app.domain.enums import RolUsuario
 from app.domain.exceptions import (
@@ -17,24 +19,43 @@ LARGO_MINIMO_PASSWORD = 8
 
 
 class LimiteDeIntentos:
-    """Frena la fuerza bruta: tras N contraseñas incorrectas para un mismo
-    email dentro de la ventana, bloquea ese email hasta que pase el tiempo."""
+    """Frena la fuerza bruta sin permitir que alguien deje afuera a otro:
+
+    - 5 contraseñas incorrectas para un email **desde una misma IP** bloquean
+      ese email *desde esa IP* durante 5 minutos (el dueño de la cuenta,
+      desde su conexión, sigue entrando);
+    - 30 fallos desde una IP (con cualquier email) en 15 minutos bloquean esa
+      IP: frena a quien prueba muchas cuentas;
+    - si un email acumula muchos fallos desde distintas IPs (ataque
+      repartido), cada intento nuevo para ese email espera un poco más
+      (hasta 3 s), en vez de bloquearlo.
+    """
 
     MAX_INTENTOS = 5
     VENTANA_SEGUNDOS = 5 * 60
+    MAX_POR_IP = 30
+    VENTANA_IP_SEGUNDOS = 15 * 60
+    DEMORA_POR_FALLO = 0.5
+    DEMORA_MAXIMA = 3.0
 
-    def __init__(self, intentos: IntentoLoginRepository):
+    def __init__(self, intentos: IntentoLoginRepository, dormir=time.sleep):
         self._intentos = intentos
+        self._dormir = dormir
 
-    def verificar(self, email: str) -> None:
-        if self._intentos.contar_recientes(email, self.VENTANA_SEGUNDOS) >= self.MAX_INTENTOS:
+    def verificar(self, email: str, ip: str | None = None) -> None:
+        if self._intentos.contar_recientes(self.VENTANA_SEGUNDOS, email=email, ip=ip) >= self.MAX_INTENTOS:
             raise PermisoDenegado("Demasiados intentos fallidos. Esperá unos minutos y volvé a probar")
+        if ip is not None and self._intentos.contar_recientes(self.VENTANA_IP_SEGUNDOS, ip=ip) >= self.MAX_POR_IP:
+            raise PermisoDenegado("Demasiados intentos fallidos desde esta conexión. Esperá unos minutos y volvé a probar")
+        de_todas_partes = self._intentos.contar_recientes(self.VENTANA_SEGUNDOS, email=email)
+        if de_todas_partes > self.MAX_INTENTOS:
+            self._dormir(min(self.DEMORA_MAXIMA, self.DEMORA_POR_FALLO * (de_todas_partes - self.MAX_INTENTOS)))
 
-    def registrar_fallo(self, email: str) -> None:
-        self._intentos.registrar_fallo(email)
+    def registrar_fallo(self, email: str, ip: str | None = None) -> None:
+        self._intentos.registrar_fallo(email, ip)
 
-    def limpiar(self, email: str) -> None:
-        self._intentos.limpiar(email, self.VENTANA_SEGUNDOS)
+    def limpiar(self, email: str, ip: str | None = None) -> None:
+        self._intentos.limpiar(email, ip, self.VENTANA_SEGUNDOS)
 
 
 def normalizar_email(email: str) -> str:
@@ -54,14 +75,14 @@ class UsuarioService:
 
     # --- Sesión --------------------------------------------------------------
 
-    def autenticar(self, email: str, password: str) -> Usuario:
+    def autenticar(self, email: str, password: str, ip: str | None = None) -> Usuario:
         email = normalizar_email(email)
         if self._limite is None:
             raise RuntimeError("UsuarioService.autenticar requiere el repositorio de intentos de login")
-        self._limite.verificar(email)
+        self._limite.verificar(email, ip)
         usuario = self._usuarios.get_by_email(email)
         if usuario is None or not verify_password(password, usuario.password_hash):
-            self._limite.registrar_fallo(email)
+            self._limite.registrar_fallo(email, ip)
             raise CredencialesInvalidas()
         if not usuario.es_interno():
             # Los proveedores tienen cuenta (para un futuro portal) pero no
@@ -69,7 +90,7 @@ class UsuarioService:
             raise PermisoDenegado("Esta cuenta no tiene acceso al sistema de gestión")
         if not usuario.activo:
             raise UsuarioInactivo()
-        self._limite.limpiar(email)
+        self._limite.limpiar(email, ip)
         return usuario
 
     def cambiar_password(self, usuario: Usuario, actual: str, nueva: str) -> Usuario:

@@ -45,6 +45,12 @@ class Settings(BaseSettings):
     # reportes por día, numeración por año). Paraguay: UTC-3 todo el año.
     zona_horaria: str = "America/Asuncion"
 
+    # Bloqueo de login por email + IP: tomar la IP del cliente de
+    # X-Forwarded-For. Correcto detrás de Vercel (que la sobrescribe); en una
+    # instalación sin proxy (por ejemplo, Windows local) poner false, porque
+    # ahí el cliente podría inventar esa cabecera.
+    ip_desde_x_forwarded_for: bool = True
+
     @property
     def es_produccion(self) -> bool:
         return self.environment.lower() == "production"
