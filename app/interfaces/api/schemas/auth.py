@@ -46,6 +46,14 @@ class SesionUsuarioResponse(UsuarioResponse):
         )
 
 
+class CambioPasswordResponse(BaseModel):
+    mensaje: str
+    # Token nuevo: los anteriores (esta y otras sesiones) dejan de valer.
+    access_token: str
+    token_type: str = "bearer"
+    expires_in: int
+
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"

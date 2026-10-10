@@ -280,9 +280,11 @@ def get_current_user(
 ) -> Usuario:
     if credenciales is None:
         raise _NO_AUTENTICADO
-    usuario_id = leer_token(credenciales.credentials)
-    usuario = usuarios.get_by_id(usuario_id) if usuario_id is not None else None
+    datos = leer_token(credenciales.credentials)
+    usuario = usuarios.get_by_id(datos[0]) if datos is not None else None
     if usuario is None or not usuario.es_interno() or not usuario.activo:
+        raise _NO_AUTENTICADO
+    if datos[1] != usuario.version_sesion:  # sesión anterior a un cambio de contraseña
         raise _NO_AUTENTICADO
     return usuario
 

@@ -49,5 +49,5 @@ def configuracion_inicial(datos: ConfiguracionInicialInput, servicio: EmpresaSvc
     admin = servicio.configurar_primer_uso(
         datos.empresa.model_dump(), datos.admin.name, datos.admin.email, datos.admin.password
     )
-    token, expira = crear_token(admin.id)
+    token, expira = crear_token(admin.id, admin.version_sesion)
     return TokenResponse(access_token=token, expires_in=expira, usuario=SesionUsuarioResponse.desde_entidad(admin))

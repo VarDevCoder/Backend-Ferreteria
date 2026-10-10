@@ -40,6 +40,9 @@ class UsuarioModel(Base):
     rol: Mapped[str] = mapped_column(String(20), default="vendedor")
     activo: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    # Va dentro del token: al cambiar o restablecer la contraseña se incrementa
+    # y las sesiones emitidas antes dejan de valer.
+    version_sesion: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
     proveedor: Mapped["ProveedorModel | None"] = relationship(back_populates="user", uselist=False)
 

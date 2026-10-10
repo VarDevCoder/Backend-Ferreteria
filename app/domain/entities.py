@@ -41,6 +41,7 @@ class Usuario:
     rol: RolUsuario = RolUsuario.VENDEDOR
     activo: bool = True
     created_at: datetime | None = None
+    version_sesion: int = 0
 
     def es_admin(self) -> bool:
         return self.rol == RolUsuario.ADMIN

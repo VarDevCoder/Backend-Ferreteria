@@ -72,12 +72,14 @@ class UsuarioService:
         self._limite.limpiar(email)
         return usuario
 
-    def cambiar_password(self, usuario: Usuario, actual: str, nueva: str) -> None:
+    def cambiar_password(self, usuario: Usuario, actual: str, nueva: str) -> Usuario:
+        """Cambia la contraseña y cierra las sesiones anteriores (version_sesion + 1)."""
         if not verify_password(actual, usuario.password_hash):
             raise CredencialesInvalidas()
         validar_password(nueva)
         usuario.password_hash = hash_password(nueva)
-        self._usuarios.update(usuario)
+        usuario.version_sesion += 1
+        return self._usuarios.update(usuario)
 
     # --- Administración (admin) ----------------------------------------------
 
@@ -122,6 +124,7 @@ class UsuarioService:
         usuario = self.obtener(usuario_id)
         validar_password(nueva)
         usuario.password_hash = hash_password(nueva)
+        usuario.version_sesion += 1  # la persona tiene que volver a ingresar con la nueva
         return self._usuarios.update(usuario)
 
     def _asegurar_otro_admin_activo(self) -> None:

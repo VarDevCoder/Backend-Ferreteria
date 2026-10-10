@@ -35,6 +35,7 @@ class SqlAlchemyUsuarioRepository:
         row.password_hash = usuario.password_hash
         row.rol = usuario.rol.value
         row.activo = usuario.activo
+        row.version_sesion = usuario.version_sesion
         self._session.flush()
         return self._to_entity(row)
 
@@ -65,6 +66,7 @@ class SqlAlchemyUsuarioRepository:
             password_hash=row.password_hash,
             rol=RolUsuario(row.rol),
             activo=row.activo,
+            version_sesion=row.version_sesion or 0,
             created_at=row.created_at,
         )
 
