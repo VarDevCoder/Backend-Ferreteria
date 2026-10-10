@@ -34,6 +34,7 @@ from app.interfaces.api.routers import (
     pedidos_cliente,
     reportes,
     solicitudes_presupuesto,
+    stock_no_vendible,
     usuarios,
 )
 
@@ -100,6 +101,7 @@ app.include_router(solicitudes_presupuesto.router, prefix=API, dependencies=_pro
 app.include_router(ordenes_compra.router, prefix=API, dependencies=_protegido(Modulo.ORDENES_COMPRA))
 app.include_router(ordenes_envio.router, prefix=API, dependencies=_protegido(Modulo.ORDENES_ENVIO))
 app.include_router(inventario.router, prefix=API, dependencies=_protegido(Modulo.INVENTARIO))
+app.include_router(stock_no_vendible.router, prefix=API, dependencies=_protegido(Modulo.INVENTARIO))
 
 # Gestión
 app.include_router(reportes.router, prefix=API, dependencies=_protegido(Modulo.REPORTES))

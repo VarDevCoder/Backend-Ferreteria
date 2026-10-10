@@ -50,12 +50,14 @@ class ProductoResponse(BaseModel):
     categoria_id: int | None
     precio_compra: int
     precio_venta: int
-    stock_actual: float
+    stock_actual: float          # stock vendible (el que usan la caja, los pedidos y los envíos)
     stock_minimo: float
     unidad_medida: str
     activo: bool
     stock_bajo: bool
     margen: float
+    stock_no_vendible: float = 0  # averiado, vencido, etc. (existe pero no se vende)
+    stock_total: float = 0        # vendible + no vendible
 
     @classmethod
     def desde_entidad(cls, p) -> "ProductoResponse":
@@ -64,4 +66,5 @@ class ProductoResponse(BaseModel):
             precio_compra=p.precio_compra, precio_venta=p.precio_venta, stock_actual=float(p.stock_actual),
             stock_minimo=float(p.stock_minimo), unidad_medida=p.unidad_medida, activo=p.activo,
             stock_bajo=p.tiene_stock_bajo(), margen=p.margen(),
+            stock_no_vendible=float(p.stock_no_vendible or 0), stock_total=float(p.stock_total()),
         )

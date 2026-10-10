@@ -30,6 +30,7 @@ from app.application.services.orden_envio_service import OrdenEnvioService
 from app.application.services.pedido_cliente_service import PedidoClienteService
 from app.application.services.reporte_service import ReporteService
 from app.application.services.solicitud_presupuesto_service import SolicitudPresupuestoService
+from app.application.services.stock_no_vendible_service import ReclamoProveedorService, StockNoVendibleService
 from app.application.services.usuario_service import UsuarioService
 from app.domain.entities import Usuario
 from app.infrastructure.db.repositories.catalogo_repository import SqlAlchemyCategoriaRepository, SqlAlchemyProductoRepository
@@ -51,6 +52,10 @@ from app.infrastructure.db.repositories.flujo_repository import (
 from app.infrastructure.db.repositories.empresa_repository import SqlAlchemyEmpresaRepository
 from app.infrastructure.db.repositories.intento_login_repository import SqlAlchemyIntentoLoginRepository
 from app.infrastructure.db.repositories.reporte_repository import SqlAlchemyReporteRepository
+from app.infrastructure.db.repositories.stock_no_vendible_repository import (
+    SqlAlchemyReclamoProveedorRepository,
+    SqlAlchemyStockNoVendibleRepository,
+)
 from app.infrastructure.db.repositories.usuario_repository import SqlAlchemyUsuarioRepository
 from app.infrastructure.db.session import get_db
 from app.infrastructure.security.tokens import leer_token
@@ -192,6 +197,25 @@ def get_inventario_service(
     movimientos: Annotated[SqlAlchemyMovimientoInventarioRepository, Depends(get_movimiento_repo)],
 ) -> InventarioService:
     return InventarioService(productos, movimientos)
+
+
+def get_stock_no_vendible_service(
+    db: DbSession,
+    movimientos: Annotated[SqlAlchemyMovimientoInventarioRepository, Depends(get_movimiento_repo)],
+    proveedores: Annotated[SqlAlchemyProveedorRepository, Depends(get_proveedor_repo)],
+) -> StockNoVendibleService:
+    return StockNoVendibleService(SqlAlchemyStockNoVendibleRepository(db), movimientos, proveedores)
+
+
+def get_reclamo_proveedor_service(
+    db: DbSession,
+    movimientos: Annotated[SqlAlchemyMovimientoInventarioRepository, Depends(get_movimiento_repo)],
+    proveedores: Annotated[SqlAlchemyProveedorRepository, Depends(get_proveedor_repo)],
+    empresa: Annotated[SqlAlchemyEmpresaRepository, Depends(get_empresa_repo)],
+) -> ReclamoProveedorService:
+    return ReclamoProveedorService(
+        SqlAlchemyReclamoProveedorRepository(db), SqlAlchemyStockNoVendibleRepository(db), movimientos, proveedores, empresa,
+    )
 
 
 def get_cuenta_corriente_service(
