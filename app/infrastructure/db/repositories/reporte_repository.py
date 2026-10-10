@@ -1,7 +1,7 @@
 """Consultas de agregación para reportes de ventas. Solo lectura."""
 from datetime import date, datetime, time, timedelta
 
-from sqlalchemy import Date, cast, func, select
+from sqlalchemy import Date, Numeric, cast, func, select
 from sqlalchemy.orm import Session
 
 from app.infrastructure.db.models import (
@@ -47,11 +47,18 @@ class SqlAlchemyReporteRepository:
         return [{"fecha": d, "cantidad": c, "total": int(t)} for d, c, t in self._session.execute(stmt)]
 
     def productos_mas_vendidos(self, desde: date, hasta: date, limite: int) -> list[dict]:
-        """Ranking por importe vendido. El costo usa el precio de compra
-        *actual* del producto, así que la utilidad es una estimación."""
+        """Ranking por importe cobrado. El descuento de la venta se reparte
+        entre sus ítems en proporción a su subtotal (ítem × total / subtotal
+        de la venta), así el ranking suma lo mismo que el total del período.
+        El costo usa el precio de compra *actual* del producto, así que la
+        utilidad es una estimación."""
         inicio, fin = _rango(desde, hasta)
         cantidad = func.sum(VentaMostradorItemModel.cantidad)
-        importe = func.sum(VentaMostradorItemModel.subtotal)
+        neto_item = (
+            cast(VentaMostradorItemModel.subtotal, Numeric) * VentaMostradorModel.total
+            / func.nullif(VentaMostradorModel.subtotal, 0)
+        )
+        importe = func.round(func.coalesce(func.sum(neto_item), 0))
         stmt = (
             select(
                 ProductoModel.id, ProductoModel.codigo, ProductoModel.nombre,
