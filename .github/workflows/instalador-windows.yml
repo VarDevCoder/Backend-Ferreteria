@@ -1,0 +1,108 @@
+# Instalador de SAIL para Windows: construye SAIL-Instalador-x.y.z.exe y lo prueba
+# en una Windows limpia (instalar, servicios, configuración inicial y login,
+# copia y restauración, actualizar, desinstalar y reinstalar conservando datos).
+#
+# Cómo lo dispara el dueño: GitHub → Backend-Ferreteria → pestaña Actions →
+# "Instalador Windows" (a la izquierda) → botón "Run workflow" → (opcional:
+# versión y rama del frontend) → "Run workflow". Al terminar (unos 20-30 min),
+# entrar a la ejecución y bajar el .exe de la sección "Artifacts".
+#
+# El frontend está en otro repo (VarDevCoder/Frontend-Ferreteria). Si es privado,
+# hace falta el secreto FRONTEND_REPO_TOKEN (token de GitHub fine-grained con
+# "Contents: Read-only" sobre ese repo): Settings → Secrets and variables →
+# Actions → New repository secret. Si el repo del frontend es público, no hace falta.
+name: Instalador Windows
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Versión x.y.z (vacío = la de instalador/windows/VERSION)"
+        required: false
+        default: ""
+      frontend_ref:
+        description: "Rama, tag o commit del frontend"
+        required: false
+        default: "main"
+  push:
+    branches: [main]
+    paths:
+      - "instalador/windows/**"
+      - "servir.py"
+      - ".github/workflows/instalador-windows.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  construir:
+    name: Construir el instalador
+    runs-on: windows-latest
+    timeout-minutes: 45
+    outputs:
+      version: ${{ steps.construir.outputs.version }}
+    steps:
+      - name: Backend
+        uses: actions/checkout@v4
+        with:
+          path: backend
+
+      - name: Frontend
+        uses: actions/checkout@v4
+        with:
+          repository: VarDevCoder/Frontend-Ferreteria
+          ref: ${{ inputs.frontend_ref || 'main' }}
+          token: ${{ secrets.FRONTEND_REPO_TOKEN || github.token }}
+          path: frontend
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Construir
+        id: construir
+        shell: powershell
+        run: |
+          & backend\instalador\windows\construir.ps1 -Backend backend -Frontend frontend -Salida salida -Version "${{ inputs.version }}"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+
+      - name: Publicar el instalador
+        uses: actions/upload-artifact@v4
+        with:
+          name: SAIL-Instalador-${{ steps.construir.outputs.version }}
+          path: |
+            salida/SAIL-Instalador-*.exe
+            salida/SAIL-Instalador-*.sha256.txt
+            salida/staging/VERSION.txt
+          if-no-files-found: error
+          retention-days: 90
+
+  probar:
+    name: Probar en Windows limpio
+    needs: construir
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: instalador/windows
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: SAIL-Instalador-${{ needs.construir.outputs.version }}
+          path: instalador-bajado
+
+      - name: Instalar, usar, actualizar, desinstalar y reinstalar
+        shell: powershell
+        run: |
+          $exe = Get-ChildItem instalador-bajado -Recurse -Filter 'SAIL-Instalador-*.exe' | Select-Object -First 1
+          & instalador\windows\probar.ps1 -Instalador $exe.FullName -Logs logs-prueba
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+
+      - name: Guardar los registros de la prueba
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: registros-prueba-windows
+          path: logs-prueba
+          retention-days: 30

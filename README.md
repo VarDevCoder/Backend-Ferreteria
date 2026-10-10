@@ -173,6 +173,16 @@ FRONTEND_DIR=../Frontend-Ferreteria uvicorn app.main:app --port 8000   # abrir h
   viejo después de actualizar) y nunca se sirven archivos ocultos (`.git`...).
 - Código: `app/interfaces/web/frontend.py`; tests: `tests/test_servidor_unico.py`.
 
+## Versión instalada en Windows
+
+Instalador `SAIL-Instalador-x.y.z.exe` (Inno Setup) con Python embebido, PostgreSQL 17 portátil,
+dos servicios de Windows (WinSW y `pg_ctl register`), acceso directo a `http://localhost:7245` y
+copia diaria con `pg_dump`. Se construye **y se prueba** en GitHub Actions (*Actions* →
+*Instalador Windows* → *Run workflow*). Uso, actualización, copias y desinstalación:
+[`docs/INSTALADOR-WINDOWS.md`](docs/INSTALADOR-WINDOWS.md). Código: `instalador/windows/` y
+`servir.py` (arranca el servidor único fuera de Vercel). Propuesta de licencias:
+[`docs/LICENCIAS.md`](docs/LICENCIAS.md).
+
 ## Base de datos
 
 - **Esquema:** lo manejan las migraciones de Alembic (`alembic/versions/`).
