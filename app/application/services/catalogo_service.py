@@ -16,12 +16,13 @@ class CategoriaService:
         return self._categorias.list(solo_activas=solo_activas)
 
     def crear(self, nombre: str, descripcion: str | None, orden: int) -> Categoria:
+        nombre = self._nombre_libre(nombre)
         categoria = Categoria(id=None, nombre=nombre, descripcion=descripcion, orden=orden)
         return self._categorias.add(categoria)
 
     def actualizar(self, categoria_id: int, nombre: str, descripcion: str | None, activo: bool, orden: int) -> Categoria:
         actual = self._obtener(categoria_id)
-        actual.nombre = nombre
+        actual.nombre = self._nombre_libre(nombre, excluir_id=categoria_id)
         actual.descripcion = descripcion
         actual.activo = activo
         actual.orden = orden
@@ -30,6 +31,12 @@ class CategoriaService:
     def eliminar(self, categoria_id: int) -> None:
         self._obtener(categoria_id)
         self._categorias.delete(categoria_id)
+
+    def _nombre_libre(self, nombre: str, excluir_id: int | None = None) -> str:
+        nombre = nombre.strip()
+        if self._categorias.existe_nombre(nombre, excluir_id):
+            raise ConflictoDeUnicidad(f"Ya existe una categoría llamada {nombre}")
+        return nombre
 
     def _obtener(self, categoria_id: int) -> Categoria:
         categoria = self._categorias.get_by_id(categoria_id)
@@ -114,5 +121,10 @@ class ProductoService:
         return self._productos.update(actual)
 
     def eliminar(self, producto_id: int) -> None:
-        self.obtener(producto_id)
+        producto = self.obtener(producto_id)
+        if self._productos.tiene_historial(producto_id):
+            raise ConflictoDeUnicidad(
+                f"{producto.nombre} ya tiene movimientos o documentos (ventas, pedidos, compras o kardex): "
+                "no se puede eliminar. Desactivalo para que no aparezca más en la venta"
+            )
         self._productos.delete(producto_id)

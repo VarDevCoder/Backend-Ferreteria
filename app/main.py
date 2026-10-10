@@ -2,9 +2,13 @@
 traduce las excepciones de dominio a respuestas HTTP — así los routers nunca
 necesitan un try/except: lanzan la excepción de negocio y este módulo decide
 el código de estado."""
+import logging
+
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import IntegrityError
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.application.permisos import Modulo
 from app.core.config import get_settings
@@ -51,6 +55,26 @@ app = FastAPI(
     version="2.0.0",
 )
 
+log = logging.getLogger(__name__)
+
+
+async def _error_inesperado_como_json(request: Request, call_next):
+    """Cualquier error no previsto responde 500 en JSON. Va *dentro* de CORS
+    (se registra antes), así la respuesta lleva la cabecera CORS y la pantalla
+    muestra el mensaje en vez de "No se pudo conectar con el servidor"."""
+    try:
+        return await call_next(request)
+    except Exception:
+        log.exception("Error inesperado en %s %s", request.method, request.url.path)
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Ocurrió un error inesperado en el servidor. Si se repite, avisá al administrador"},
+        )
+
+
+app.add_middleware(BaseHTTPMiddleware, dispatch=_error_inesperado_como_json)
+# CORS se agrega último para quedar por fuera de todo (Starlette envuelve en
+# orden inverso): así también las respuestas de error llevan la cabecera.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
@@ -77,6 +101,17 @@ def manejar_error_de_dominio(_request: Request, exc: DomainError) -> JSONRespons
     return JSONResponse(status_code=status_code, content={"detail": str(exc)})
 
 
+
+
+@app.exception_handler(IntegrityError)
+def manejar_conflicto_de_base(_request: Request, exc: IntegrityError) -> JSONResponse:
+    """Red de seguridad: los servicios validan duplicados y borrados con
+    historial, pero si la base rechaza algo igual se responde 409 y no 500."""
+    log.warning("Conflicto de integridad: %s", exc.orig)
+    return JSONResponse(
+        status_code=409,
+        content={"detail": "No se pudo guardar: el dato ya existe o está en uso en otros registros"},
+    )
 
 
 def _protegido(modulo: Modulo | None = None) -> list:

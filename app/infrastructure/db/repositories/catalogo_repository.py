@@ -5,7 +5,16 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.domain.entities import Categoria, Producto
-from app.infrastructure.db.models import CategoriaModel, ProductoModel
+from app.infrastructure.db.models import (
+    CategoriaModel,
+    MovimientoInventarioModel,
+    OrdenCompraItemModel,
+    OrdenEnvioItemModel,
+    PedidoClienteItemModel,
+    ProductoModel,
+    SolicitudPresupuestoItemModel,
+    VentaMostradorItemModel,
+)
 
 
 class SqlAlchemyCategoriaRepository:
@@ -44,6 +53,12 @@ class SqlAlchemyCategoriaRepository:
         row.orden = categoria.orden
         self._session.flush()
         return self._to_entity(row)
+
+    def existe_nombre(self, nombre: str, excluir_id: int | None = None) -> bool:
+        stmt = select(CategoriaModel.id).where(func.lower(func.trim(CategoriaModel.nombre)) == nombre.strip().lower())
+        if excluir_id is not None:
+            stmt = stmt.where(CategoriaModel.id != excluir_id)
+        return self._session.execute(stmt.limit(1)).first() is not None
 
     def delete(self, categoria_id: int) -> None:
         row = self._session.get(CategoriaModel, categoria_id)
@@ -134,6 +149,16 @@ class SqlAlchemyProductoRepository:
         if row:
             self._session.delete(row)
             self._session.flush()
+
+    def tiene_historial(self, producto_id: int) -> bool:
+        """¿Aparece en el kardex o en algún documento? Entonces no se borra (se desactiva)."""
+        for modelo in (
+            MovimientoInventarioModel, VentaMostradorItemModel, PedidoClienteItemModel,
+            SolicitudPresupuestoItemModel, OrdenCompraItemModel, OrdenEnvioItemModel,
+        ):
+            if self._session.execute(select(modelo.id).where(modelo.producto_id == producto_id).limit(1)).first():
+                return True
+        return False
 
     def siguiente_codigo(self) -> str:
         ultimo_id = self._session.execute(select(func.max(ProductoModel.id))).scalar() or 0

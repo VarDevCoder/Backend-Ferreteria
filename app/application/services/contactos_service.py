@@ -30,14 +30,27 @@ class ClienteService:
         return cliente
 
     def crear(self, **datos) -> Cliente:
-        cliente = Cliente(id=None, **datos)
+        cliente = Cliente(id=None, **self._datos_unicos(datos))
         return self._clientes.add(cliente)
 
     def actualizar(self, cliente_id: int, **datos) -> Cliente:
         actual = self.obtener(cliente_id)
-        for campo, valor in datos.items():
+        for campo, valor in self._datos_unicos(datos, excluir_id=cliente_id).items():
             setattr(actual, campo, valor)
         return self._clientes.update(actual)
+
+    def _datos_unicos(self, datos: dict, excluir_id: int | None = None) -> dict:
+        """RUC y email vacíos quedan sin cargar; si vienen, no pueden ser de otro cliente."""
+        datos = dict(datos)
+        for campo in ("ruc", "email"):
+            if campo in datos:
+                valor = (datos[campo] or "").strip() or None
+                datos[campo] = valor.lower() if valor and campo == "email" else valor
+        if datos.get("ruc") and self._clientes.existe_ruc(datos["ruc"], excluir_id):
+            raise ConflictoDeUnicidad(f"Ya hay un cliente con el RUC {datos['ruc']}")
+        if datos.get("email") and self._clientes.existe_email(datos["email"], excluir_id):
+            raise ConflictoDeUnicidad(f"Ya hay un cliente con el email {datos['email']}")
+        return datos
 
     def eliminar(self, cliente_id: int) -> None:
         self.obtener(cliente_id)
@@ -87,8 +100,12 @@ class ProveedorService:
     ) -> Proveedor:
         """Crea primero el `User` con rol proveedor y luego la ficha comercial,
         tal como especifica CU-08."""
+        email = email.strip().lower()
+        ruc = ruc.strip()
         if self._usuarios.get_by_email(email) is not None:
             raise ConflictoDeUnicidad("Ya existe una cuenta con ese email")
+        if self._proveedores.existe_ruc(ruc):
+            raise ConflictoDeUnicidad(f"Ya hay un proveedor con el RUC {ruc}")
 
         usuario = self._usuarios.add(
             Usuario(id=None, name=razon_social, email=email, password_hash=hash_password(password), rol=RolUsuario.PROVEEDOR)
@@ -101,6 +118,10 @@ class ProveedorService:
 
     def actualizar(self, proveedor_id: int, **datos) -> Proveedor:
         actual = self.obtener(proveedor_id)
+        if "ruc" in datos:
+            datos["ruc"] = datos["ruc"].strip()
+            if self._proveedores.existe_ruc(datos["ruc"], excluir_id=proveedor_id):
+                raise ConflictoDeUnicidad(f"Ya hay un proveedor con el RUC {datos['ruc']}")
         for campo, valor in datos.items():
             setattr(actual, campo, valor)
         return self._proveedores.update(actual)

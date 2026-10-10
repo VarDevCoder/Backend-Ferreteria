@@ -1,7 +1,7 @@
 """Repositorios de Cliente, Proveedor y su catálogo de productos ofrecidos."""
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.domain.entities import Cliente, Proveedor, ProveedorProducto
@@ -76,6 +76,18 @@ class SqlAlchemyClienteRepository:
         cuenta = select(MovimientoCuentaCorrienteModel.id).where(MovimientoCuentaCorrienteModel.cliente_id == cliente_id).limit(1)
         return self._session.execute(stmt).first() is not None or self._session.execute(cuenta).first() is not None
 
+    def existe_ruc(self, ruc: str, excluir_id: int | None = None) -> bool:
+        return self._existe(func.lower(ClienteModel.ruc) == ruc.lower(), excluir_id)
+
+    def existe_email(self, email: str, excluir_id: int | None = None) -> bool:
+        return self._existe(func.lower(ClienteModel.email) == email.lower(), excluir_id)
+
+    def _existe(self, condicion, excluir_id: int | None) -> bool:
+        stmt = select(ClienteModel.id).where(condicion)
+        if excluir_id is not None:
+            stmt = stmt.where(ClienteModel.id != excluir_id)
+        return self._session.execute(stmt.limit(1)).first() is not None
+
     def ciudades(self) -> list[str]:
         stmt = select(ClienteModel.ciudad).where(ClienteModel.ciudad.is_not(None)).distinct()
         return sorted({c for c in self._session.execute(stmt).scalars().all() if c})
@@ -125,6 +137,12 @@ class SqlAlchemyProveedorRepository:
     def get_by_id(self, proveedor_id: int) -> Proveedor | None:
         row = self._session.get(ProveedorModel, proveedor_id, options=[joinedload(ProveedorModel.user)])
         return self._to_entity(row) if row else None
+
+    def existe_ruc(self, ruc: str, excluir_id: int | None = None) -> bool:
+        stmt = select(ProveedorModel.id).where(func.lower(ProveedorModel.ruc) == ruc.lower())
+        if excluir_id is not None:
+            stmt = stmt.where(ProveedorModel.id != excluir_id)
+        return self._session.execute(stmt.limit(1)).first() is not None
 
     def get_by_user_id(self, user_id: int) -> Proveedor | None:
         stmt = (
