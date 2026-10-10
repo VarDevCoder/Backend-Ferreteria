@@ -25,10 +25,10 @@ endpoint o tabla).
    **pago mixto**, **venta a cuenta** con límite de crédito, **cobranzas**, **inventario con kardex**,
    **reportes**, **usuarios con 4 roles** y **configuración inicial** para una empresa nueva.
 2. El flujo de **encargos** (pedido → cotización a proveedores → orden de compra → envío) existe
-   completo, pero tiene **un error grave**: registrar la recepción de una orden de compra
-   **devuelve error 500 siempre** (ver 3.1-A). Hoy no se puede ingresar mercadería por compras.
-3. Hay otros errores concretos en envíos (stock que se pierde al cancelar, pedidos que quedan
-   trabados) y varios errores 500 por datos duplicados (sección 3.1).
+   completo. Tenía **un error grave**: registrar la recepción de una orden de compra devolvía
+   error 500 siempre (3.1-A). **Ya está corregido** en la rama `qa/correcciones`, pendiente de integrar (3.0).
+3. Los errores de envíos, los 500 por datos duplicados, descuentos sin tope, "hoy" en UTC,
+   numeración repetible y bloqueos ante operaciones simultáneas también están corregidos (3.0).
 4. El backend está bien ordenado (capas, reglas en el dominio, permisos validados en el servidor)
    y tiene **16 tests de integración** que pasan; el frontend no tiene tests automatizados.
 5. **Producción:** la demo no está cargada (falta `SEED_DEMO=true` en Vercel) y la carga de la demo
@@ -391,7 +391,7 @@ Postgres real.
 - **Pedidos desde stock** sin pasar por compras y **cotización solo de lo faltante**.
 - **Búsqueda rápida** con escape de comodines (`%`, `_`) y código exacto para el lector.
 
-### 2.5 Tests del backend (16, todos pasan)
+### 2.5 Tests del backend (16 originales; con las correcciones de QA y Backend son 58, todos pasan)
 
 | Archivo | Test | Qué asegura |
 |---|---|---|
@@ -425,7 +425,53 @@ Postgres real.
 
 ## 3. Lo que no está tan bien implementado, pendientes y riesgos
 
+### 3.0 Correcciones de QA (actualizado: octubre 2026)
+
+**En simple:** el equipo de QA corrigió casi todos los errores de la tabla 3.1 y los que encontró
+el relevamiento (QA-N1 a QA-N4 de `docs/BACKLOG.md`). Cada corrección tiene un test que reproducía
+el error antes y pasa después. Ahora el backend tiene **58 tests** (todos pasan) y los dos repos
+tienen **CI en GitHub Actions**.
+
+**Técnico:** trabajo en las ramas `qa/correcciones` del backend y del frontend, rebasadas sobre la
+rama de integración (backend `563c6ba`, frontend `cc198da`). **Al momento de escribir esto falta
+integrarlas** a `claude/intelligent-ramanujan-l97zgv` y a `main`: el entorno de QA no tuvo permiso
+para pushear a esas ramas. Hasta que se integren, producción sigue con los errores.
+
+| # | Estado | Qué se hizo | Dónde / test |
+|---|---|---|---|
+| A | **Corregido** | La recepción de órdenes de compra convierte la cantidad a `Decimal`: ya no da 500. | `orden_compra_service.py` · `tests/test_compras.py` |
+| B | Pendiente (parcial) | Recibir de más (8 de 5) sigue permitido y el costo no se actualiza al recibir: es una regla de negocio para definir con el dueño. Sí se valida que la cantidad respete la unidad (QA-N1). | — |
+| C | **Corregido** | Un envío despachado ya **no se puede cancelar** (409: "registrá la devolución"); la pantalla solo ofrece Cancelar en Preparando o Listo. | `entities.OrdenEnvio.puede_ser_cancelada`, `orden-envio-detalle.js` · `tests/test_envios.py` |
+| D | **Corregido** | Devolver un envío pasa el pedido de Enviado a Mercadería recibida: se puede reenviar o cancelar. | `orden_envio_service.py` · `tests/test_envios.py` |
+| E | **Corregido** | Borrar un envío cancelado no toca el pedido; cancelar o borrar uno en preparación libera el pedido solo si sigue en Listo para envío. | `orden_envio_service._liberar_pedido` · `tests/test_envios.py` |
+| — | **Corregido** | (Reportado por Frontend) `POST /ordenes-envio/{id}/entregar` con `{}` daba 422: las observaciones ahora son opcionales. | `routers/ordenes_envio.py` · `tests/test_envios.py` |
+| F | **Corregido** | Cliente con RUC/email repetido, proveedor con RUC repetido, categoría repetida → 409 con mensaje; producto con historial → 409 "desactivalo". Red de seguridad: errores de la base por código de Postgres (repetido 409, referencia inexistente 422) y un middleware que hace que **todo 500 salga en JSON y con cabecera CORS**. | `main.py`, servicios de contactos y catálogo · `tests/test_errores_claros.py` |
+| G | **Corregido** | Vendedor y depósito descuentan **hasta 10 %** por venta o pedido; admin y encargado sin tope. La caja limita el campo al tope del rol (`GET /auth/me` → `descuento_maximo`). **El 10 % es una decisión a confirmar con el dueño** (`permisos.DESCUENTO_MAXIMO_SIN_PERMISO`). | `permisos.py`, `caja_service.py`, `punto-venta.js` · `tests/test_descuentos_y_precios.py` |
+| H | **Corregido** | En pedidos, cambiar el precio de lista exige `precios_venta` (como en la caja); al editar se puede mantener el precio ya pactado por un encargado. | `pedido_cliente_service.py` · `tests/test_descuentos_y_precios.py` |
+| I | **Corregido** | El ranking de productos reparte el descuento de la venta entre sus ítems (ítem × total / subtotal). | `reporte_repository.py` · `tests/test_reportes.py` |
+| J | Corregido por Frontend | Etapa 3c del rediseño (pantallas de encargos con `escaparHtml`). | Frontend `f2bcb66` |
+| K | **Corregido** | Numeración = mayor número del año + 1 con lock de Postgres por tipo de documento (antes se repetía al borrar un pedido). Bloqueos `FOR UPDATE`: turno de caja (apertura, ventas, movimientos, cierre), stock (venta, recepción, despacho, devolución, ajuste) y cliente (venta a cuenta y cobro contra el límite). | `flujo_repository.siguiente_numero`, servicios · `tests/test_concurrencia.py` (requests en paralelo) |
+| L | **Corregido** | "Hoy" en hora de Paraguay (`ZONA_HORARIA`, por defecto `America/Asuncion`) en caja, Inicio, reportes, fechas de documentos y numeración. La base guarda UTC (la sesión se fija en UTC al conectar). En el frontend, las fechas solas ya no se muestran un día antes y las horas se muestran en hora de Paraguay; el pedido nuevo propone la fecha de hoy en Paraguay. | `app/core/tiempo.py`, `tiempo_sql.py`, `ui.js` · `tests/test_zona_horaria.py` |
+| M | Pendiente | Cotizaciones rígidas y OC sin `proveedor_id`: es funcionalidad nueva (líder Backend). | — |
+| N | **Corregido** | Migración `bff0f60ca1c1` (created_at NOT NULL) y modelos alineados: `alembic check` sin diferencias. CI: backend (Postgres 16, `alembic upgrade head` en base vacía, `alembic check`, una sola cabeza, pytest) y frontend (`verificar.mjs` + `node --check`). | `.github/workflows/ci.yml` en los dos repos |
+| QA-N1 | **Corregido** | Solo **m, kg, lt y l** admiten decimales; pz, unidad, caja, bolsa, rollo, lata... solo enteras. Se valida en ventas, pedidos, compras (alta y recepción), envíos, ajustes y stock no vendible; la caja usa paso 1 para esas unidades (`fraccionable` en `GET /productos`). | `entities.UNIDADES_FRACCIONABLES` · `tests/test_validaciones_relevamiento.py` |
+| QA-N2 | **Corregido** | Cliente, producto, categoría o proveedor inexistentes → 404 con el nombre del recurso (y 422 si igual llega a la base). | ídem |
+| QA-N3 | **Corregido** | Un producto desactivado no se vende ni se pide (422). | ídem |
+| QA-N4 | **Corregido** | "Stock insuficiente para Destornillador: hay 1.800 pz y se pidieron 2.000 pz" (formato de Paraguay, con unidad). | `domain/formato.py` · ídem |
+| QA-N5 | Medido | Es REL-03 (paginación en el servidor, líder Backend). Queda `herramientas/medir_catalogo_grande.py`: con 12.000 productos, `GET /productos` e `/inventario/stock` pesan ~3,7 MB (objetivo 500 KB). | `herramientas/medir_catalogo_grande.py` |
+
+Seguridad (ver 3.2), también corregido:
+- **Cambiar o restablecer la contraseña cierra las sesiones anteriores** (`usuarios.version_sesion`,
+  migración `4becebfe6a70`); quien la cambió recibe un token nuevo y sigue adentro.
+- **Bloqueo de login por email + IP** (migración `1af74c2395d4`): 5 fallos bloquean ese email solo
+  desde esa IP; 30 fallos desde una IP la bloquean; un ataque repartido entre muchas IPs recibe una
+  demora progresiva (hasta 3 s) en vez de bloquear la cuenta. Así nadie deja afuera al admin a
+  propósito. La IP sale de `X-Forwarded-For` (Vercel la sobrescribe); en una instalación sin proxy
+  hay que poner `IP_DESDE_X_FORWARDED_FOR=false`.
+
 ### 3.1 Errores encontrados en esta revisión (verificados con la API)
+
+> Tabla original de la revisión. El estado actual de cada punto está en 3.0.
 
 Ordenados por gravedad. Todos se reprodujeron contra la rama actual.
 
@@ -450,10 +496,10 @@ Ordenados por gravedad. Todos se reprodujeron contra la rama actual.
 
 - **Token en `localStorage`**: cualquier XSS (ver J) puede leerlo. Alternativa: cookie `HttpOnly`
   con `SameSite`, o como mínimo escapar todo y agregar una política CSP en `netlify.toml`.
-- **No se pueden cerrar sesiones abiertas**: cambiar o restablecer la contraseña no invalida los
-  tokens que ya existen (duran 12 h). Solo se corta desactivando al usuario o cambiando `SECRET_KEY`.
-- **Bloqueo de login por email, no por IP**: cualquiera que sepa el email del admin puede dejarlo
-  sin entrar 5 minutos cada vez; tampoco frena a quien prueba muchos emails distintos.
+- ~~**No se pueden cerrar sesiones abiertas**~~ *Corregido (3.0)*: cambiar o restablecer la
+  contraseña invalida los tokens anteriores. Todavía no hay un botón "cerrar todas mis sesiones".
+- ~~**Bloqueo de login por email, no por IP**~~ *Corregido (3.0)*: ahora es por email + IP, con
+  tope por IP y demora progresiva.
 - **Ventana de la configuración inicial**: mientras una base nueva no tenga usuarios, cualquiera que
   abra la URL puede crear el admin. Hay que hacer el setup apenas se despliega.
 - **`/docs` público** en producción (no expone datos, pero muestra toda la API).
@@ -517,10 +563,12 @@ Ordenados por gravedad. Todos se reprodujeron contra la rama actual.
 
 ### Ahora (antes de mostrar o vender)
 
-1. **Arreglar la recepción de órdenes de compra** (3.1-A) con un test del flujo completo de encargos.
-2. Corregir los errores de envíos (3.1-C, D, E) y el **500 por duplicados** (3.1-F).
-3. **Tope de descuento por rol** y control de precio en pedidos (3.1-G, H).
-4. **Escapar el HTML** en las pantallas viejas (3.1-J).
+1. ~~Arreglar la recepción de órdenes de compra (3.1-A)~~ — corregido (3.0).
+2. ~~Errores de envíos (3.1-C, D, E) y 500 por duplicados (3.1-F)~~ — corregido (3.0).
+3. ~~Tope de descuento por rol y precio en pedidos (3.1-G, H)~~ — corregido; **confirmar el 10 % con el dueño**.
+4. ~~Escapar el HTML en las pantallas viejas (3.1-J)~~ — hecho por Frontend (etapa 3c).
+4b. **Integrar las ramas `qa/correcciones`** a la rama de integración y a `main` (3.0).
+4c. Definir con el dueño la recepción de más de lo pedido y la actualización del costo al recibir (3.1-B).
 5. **Cargar la demo en producción** (`SEED_DEMO=true`) cuando el seed esté optimizado.
 6. Actualizar los dos README (3.3, última fila).
 
