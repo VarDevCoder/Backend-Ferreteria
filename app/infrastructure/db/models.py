@@ -9,6 +9,7 @@ from datetime import date, datetime
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     Date,
     DateTime,
     ForeignKey,
@@ -97,6 +98,8 @@ class ProductoModel(Base):
     stock_minimo: Mapped[float] = mapped_column(Numeric(14, 3), default=0)
     unidad_medida: Mapped[str] = mapped_column(String(20), default="pz")
     activo: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    # Unidades que existen pero no se pueden vender (ver StockNoVendibleModel).
+    stock_no_vendible: Mapped[float] = mapped_column(Numeric(14, 3), default=0, server_default="0")
 
 
 class ClienteModel(Base):
@@ -323,6 +326,9 @@ class MovimientoInventarioModel(Base):
     usuario_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True)
     observaciones: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
+    # Solo en movimientos que tocan el stock no vendible.
+    no_vendible_anterior: Mapped[float | None] = mapped_column(Numeric(14, 3), nullable=True)
+    no_vendible_nuevo: Mapped[float | None] = mapped_column(Numeric(14, 3), nullable=True)
 
 
 class CajaTurnoModel(Base):
@@ -424,3 +430,101 @@ class VentaMostradorItemModel(Base):
     subtotal: Mapped[int] = mapped_column(Integer, default=0)
 
     venta: Mapped[VentaMostradorModel] = relationship(back_populates="items")
+
+
+class StockNoVendibleModel(Base):
+    """Unidades de un producto separadas del stock vendible por un motivo
+    (averiado, vencido...), con lo que falta resolver."""
+
+    __tablename__ = "stock_no_vendible"
+    __table_args__ = (
+        CheckConstraint("cantidad > 0", name="ck_stock_no_vendible_cantidad"),
+        CheckConstraint("cantidad_pendiente >= 0 AND cantidad_pendiente <= cantidad", name="ck_stock_no_vendible_pendiente"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    producto_id: Mapped[int] = mapped_column(ForeignKey("productos.id", ondelete="RESTRICT"), index=True)
+    cantidad: Mapped[float] = mapped_column(Numeric(14, 3))
+    cantidad_pendiente: Mapped[float] = mapped_column(Numeric(14, 3))
+    motivo: Mapped[str] = mapped_column(String(20))
+    nota: Mapped[str | None] = mapped_column(Text, nullable=True)
+    proveedor_id: Mapped[int | None] = mapped_column(ForeignKey("proveedores.id", ondelete="SET NULL"), nullable=True, index=True)
+    orden_compra_id: Mapped[int | None] = mapped_column(ForeignKey("ordenes_compra.id", ondelete="SET NULL"), nullable=True)
+    costo_unitario: Mapped[int] = mapped_column(Integer, default=0)
+    estado: Mapped[str] = mapped_column(String(20), default="PENDIENTE", index=True)
+    usuario_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    resoluciones: Mapped[list["ResolucionNoVendibleModel"]] = relationship(
+        back_populates="registro", cascade="all, delete-orphan", order_by="ResolucionNoVendibleModel.id"
+    )
+
+
+class ResolucionNoVendibleModel(Base):
+    """Cada resolución (total o parcial) de un registro no vendible."""
+
+    __tablename__ = "stock_no_vendible_resoluciones"
+    __table_args__ = (CheckConstraint("cantidad > 0", name="ck_resolucion_no_vendible_cantidad"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    registro_id: Mapped[int] = mapped_column(ForeignKey("stock_no_vendible.id", ondelete="CASCADE"), index=True)
+    tipo: Mapped[str] = mapped_column(String(30))
+    cantidad: Mapped[float] = mapped_column(Numeric(14, 3))
+    monto: Mapped[int] = mapped_column(Integer, default=0)
+    reclamo_id: Mapped[int | None] = mapped_column(ForeignKey("reclamos_proveedor.id", ondelete="SET NULL"), nullable=True)
+    nota: Mapped[str | None] = mapped_column(Text, nullable=True)
+    usuario_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    registro: Mapped[StockNoVendibleModel] = relationship(back_populates="resoluciones")
+
+
+class ReclamoProveedorModel(Base):
+    __tablename__ = "reclamos_proveedor"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    numero: Mapped[str] = mapped_column(String(50), unique=True)
+    proveedor_id: Mapped[int | None] = mapped_column(ForeignKey("proveedores.id", ondelete="SET NULL"), nullable=True, index=True)
+    usuario_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True)
+    proveedor_razon_social: Mapped[str] = mapped_column(String(255))
+    proveedor_ruc: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    proveedor_telefono: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    proveedor_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    proveedor_direccion: Mapped[str | None] = mapped_column(Text, nullable=True)
+    estado: Mapped[str] = mapped_column(String(20), default="BORRADOR", index=True)
+    notas: Mapped[str | None] = mapped_column(Text, nullable=True)
+    respuesta_proveedor: Mapped[str | None] = mapped_column(Text, nullable=True)
+    motivo_rechazo: Mapped[str | None] = mapped_column(Text, nullable=True)
+    numero_nota_credito: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    numero_nota_remision: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    fecha_envio: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    fecha_respuesta: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    fecha_resolucion: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
+
+    items: Mapped[list["ReclamoProveedorItemModel"]] = relationship(
+        back_populates="reclamo", cascade="all, delete-orphan", order_by="ReclamoProveedorItemModel.id"
+    )
+
+
+class ReclamoProveedorItemModel(Base):
+    __tablename__ = "reclamo_proveedor_items"
+    __table_args__ = (
+        UniqueConstraint("reclamo_id", "registro_id"),
+        CheckConstraint("cantidad > 0", name="ck_reclamo_item_cantidad"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    reclamo_id: Mapped[int] = mapped_column(ForeignKey("reclamos_proveedor.id", ondelete="CASCADE"), index=True)
+    registro_id: Mapped[int] = mapped_column(ForeignKey("stock_no_vendible.id", ondelete="RESTRICT"), index=True)
+    producto_id: Mapped[int] = mapped_column(ForeignKey("productos.id", ondelete="RESTRICT"))
+    cantidad: Mapped[float] = mapped_column(Numeric(14, 3))
+    costo_unitario: Mapped[int] = mapped_column(Integer, default=0)
+    resolucion: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    monto_nota_credito: Mapped[int] = mapped_column(Integer, default=0)
+    nota_resolucion: Mapped[str | None] = mapped_column(Text, nullable=True)
+    resuelto_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True)
+    resuelto_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    reclamo: Mapped[ReclamoProveedorModel] = relationship(back_populates="items")

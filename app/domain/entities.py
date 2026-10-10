@@ -17,13 +17,18 @@ from app.domain.enums import (
     EstadoOrdenCompra,
     EstadoOrdenEnvio,
     EstadoPedidoCliente,
+    EstadoReclamoProveedor,
     EstadoSolicitudPresupuesto,
+    EstadoStockNoVendible,
     MetodoPago,
+    MotivoNoVendible,
+    ResolucionItemReclamo,
     RolUsuario,
     TipoMovimientoCaja,
     TipoMovimientoCuentaCorriente,
     TipoMovimientoInventario,
     TipoReferenciaMovimiento,
+    TipoResolucionNoVendible,
 )
 
 
@@ -87,10 +92,18 @@ class Producto:
     categoria_id: int | None = None
     precio_compra: int = 0
     precio_venta: int = 0
+    # Stock vendible: lo único que pueden usar la caja, los pedidos y los envíos.
     stock_actual: Decimal = Decimal("0")
     stock_minimo: Decimal = Decimal("0")
     unidad_medida: str = "pz"
     activo: bool = True
+    # Unidades que existen pero no se pueden vender (averiadas, vencidas...).
+    # Solo las mueve el servicio de stock no vendible.
+    stock_no_vendible: Decimal = Decimal("0")
+
+    def stock_total(self) -> Decimal:
+        """Unidades físicas: vendibles más no vendibles."""
+        return Decimal(self.stock_actual) + Decimal(self.stock_no_vendible or 0)
 
     def tiene_stock_bajo(self) -> bool:
         return self.stock_minimo > 0 and self.stock_actual <= self.stock_minimo
@@ -410,6 +423,10 @@ class MovimientoInventario:
     usuario_id: int | None = None
     observaciones: str | None = None
     created_at: datetime | None = None
+    # Solo en movimientos que tocan el stock no vendible (stock_anterior y
+    # stock_nuevo siempre son del stock vendible).
+    no_vendible_anterior: Decimal | None = None
+    no_vendible_nuevo: Decimal | None = None
 
 
 @dataclass
@@ -516,3 +533,158 @@ class VentaMostrador:
         self.subtotal = sum(item.calcular_subtotal() for item in self.items)
         descuento_monto = int(round(self.subtotal * self.descuento / 100))
         self.total = max(0, self.subtotal - descuento_monto)
+
+
+# --- Stock no vendible y reclamos al proveedor -----------------------------------
+
+@dataclass
+class ResolucionNoVendible:
+    """Qué se hizo con parte (o todas) las unidades de un registro no vendible."""
+
+    id: int | None
+    registro_id: int
+    tipo: TipoResolucionNoVendible
+    cantidad: Decimal
+    # Pérdida (descarte) o importe de la nota de crédito del proveedor.
+    monto: int = 0
+    reclamo_id: int | None = None
+    nota: str | None = None
+    usuario_id: int | None = None
+    usuario_nombre: str | None = None
+    created_at: datetime | None = None
+
+
+@dataclass
+class StockNoVendible:
+    """Unidades de un producto que pasaron de vendibles a no vendibles por un
+    mismo motivo. Siguen existiendo (cuentan en el stock total) hasta que se
+    resuelven: reparadas, descartadas o devueltas al proveedor por un reclamo."""
+
+    id: int | None
+    producto_id: int
+    cantidad: Decimal                 # unidades que se marcaron
+    cantidad_pendiente: Decimal       # las que todavía no se resolvieron
+    motivo: MotivoNoVendible
+    nota: str | None = None
+    proveedor_id: int | None = None
+    orden_compra_id: int | None = None
+    costo_unitario: int = 0           # precio de compra al momento de marcarlas
+    estado: EstadoStockNoVendible = EstadoStockNoVendible.PENDIENTE
+    usuario_id: int | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    # Calculados al leer (no se guardan en la fila).
+    cantidad_en_reclamo: Decimal = Decimal("0")
+    producto_codigo: str | None = None
+    producto_nombre: str | None = None
+    unidad_medida: str | None = None
+    proveedor_nombre: str | None = None
+    usuario_nombre: str | None = None
+    resoluciones: list[ResolucionNoVendible] = field(default_factory=list)
+
+    def cantidad_libre(self) -> Decimal:
+        """Unidades sin resolver que no están reservadas en un reclamo abierto:
+        las únicas que se pueden reparar, descartar o sumar a otro reclamo."""
+        return max(Decimal("0"), Decimal(self.cantidad_pendiente) - Decimal(self.cantidad_en_reclamo))
+
+    def valor_pendiente(self) -> int:
+        return int(round(Decimal(self.cantidad_pendiente) * self.costo_unitario))
+
+    def recalcular_estado(self) -> None:
+        if self.cantidad_pendiente <= 0:
+            self.estado = EstadoStockNoVendible.RESUELTO
+        elif self.cantidad_en_reclamo >= self.cantidad_pendiente:
+            self.estado = EstadoStockNoVendible.EN_RECLAMO
+        else:
+            self.estado = EstadoStockNoVendible.PENDIENTE
+
+
+@dataclass
+class ReclamoProveedorItem:
+    id: int | None
+    reclamo_id: int | None
+    registro_id: int
+    producto_id: int
+    cantidad: Decimal
+    costo_unitario: int = 0
+    resolucion: ResolucionItemReclamo | None = None
+    monto_nota_credito: int = 0
+    nota_resolucion: str | None = None
+    resuelto_por: int | None = None
+    resuelto_at: datetime | None = None
+    # Calculados al leer.
+    producto_codigo: str | None = None
+    producto_nombre: str | None = None
+    unidad_medida: str | None = None
+    motivo: MotivoNoVendible | None = None
+    nota_registro: str | None = None
+
+    def subtotal(self) -> int:
+        return int(round(Decimal(self.cantidad) * self.costo_unitario))
+
+    def esta_resuelto(self) -> bool:
+        return self.resolucion is not None
+
+
+@dataclass
+class ReclamoProveedor:
+    """Reclamo a un proveedor por unidades no vendibles que le corresponden.
+
+    BORRADOR → ENVIADO → ACEPTADO → RESUELTO (cuando todos los ítems tienen
+    resolución), o ENVIADO → RECHAZADO. Los datos del proveedor se copian al
+    crear el reclamo (como en la orden de compra) para que el documento no
+    cambie si después se edita o borra el proveedor."""
+
+    id: int | None
+    numero: str
+    proveedor_id: int | None
+    usuario_id: int
+    proveedor_razon_social: str = ""
+    proveedor_ruc: str | None = None
+    proveedor_telefono: str | None = None
+    proveedor_email: str | None = None
+    proveedor_direccion: str | None = None
+    estado: EstadoReclamoProveedor = EstadoReclamoProveedor.BORRADOR
+    notas: str | None = None
+    respuesta_proveedor: str | None = None
+    motivo_rechazo: str | None = None
+    # Números de documentos que emite el proveedor o que acompañan el traslado
+    # (SAIL no genera documentos fiscales: solo los registra).
+    numero_nota_credito: str | None = None
+    numero_nota_remision: str | None = None
+    fecha_envio: datetime | None = None
+    fecha_respuesta: datetime | None = None
+    fecha_resolucion: datetime | None = None
+    created_at: datetime | None = None
+    usuario_nombre: str | None = None
+    items: list[ReclamoProveedorItem] = field(default_factory=list)
+
+    ESTADOS_ABIERTOS = (EstadoReclamoProveedor.BORRADOR, EstadoReclamoProveedor.ENVIADO, EstadoReclamoProveedor.ACEPTADO)
+
+    def esta_abierto(self) -> bool:
+        return self.estado in self.ESTADOS_ABIERTOS
+
+    def puede_editarse(self) -> bool:
+        return self.estado == EstadoReclamoProveedor.BORRADOR
+
+    def puede_eliminarse(self) -> bool:
+        return self.estado == EstadoReclamoProveedor.BORRADOR
+
+    def puede_enviarse(self) -> bool:
+        return self.estado == EstadoReclamoProveedor.BORRADOR and bool(self.items)
+
+    def puede_responderse(self) -> bool:
+        """Aceptar o rechazar: solo un reclamo enviado."""
+        return self.estado == EstadoReclamoProveedor.ENVIADO
+
+    def puede_resolver_items(self) -> bool:
+        return self.estado == EstadoReclamoProveedor.ACEPTADO
+
+    def todos_los_items_resueltos(self) -> bool:
+        return bool(self.items) and all(i.esta_resuelto() for i in self.items)
+
+    def total_reclamado(self) -> int:
+        return sum(i.subtotal() for i in self.items)
+
+    def total_nota_credito(self) -> int:
+        return sum(i.monto_nota_credito or 0 for i in self.items)

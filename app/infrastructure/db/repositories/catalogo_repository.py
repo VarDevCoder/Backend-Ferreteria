@@ -153,6 +153,7 @@ class SqlAlchemyProductoRepository:
             stock_minimo=row.stock_minimo,
             unidad_medida=row.unidad_medida,
             activo=row.activo,
+            stock_no_vendible=row.stock_no_vendible or 0,
         )
 
     @staticmethod

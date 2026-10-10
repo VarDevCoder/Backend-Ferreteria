@@ -613,6 +613,8 @@ class SqlAlchemyMovimientoInventarioRepository:
             referencia_id=movimiento.referencia_id,
             usuario_id=movimiento.usuario_id,
             observaciones=movimiento.observaciones,
+            no_vendible_anterior=movimiento.no_vendible_anterior,
+            no_vendible_nuevo=movimiento.no_vendible_nuevo,
         )
         self._session.add(row)
         self._session.flush()
@@ -621,7 +623,9 @@ class SqlAlchemyMovimientoInventarioRepository:
     def list(
         self, producto_id: int | None = None, tipo: str | None = None, limit: int | None = None
     ) -> list[MovimientoInventario]:
-        stmt = select(MovimientoInventarioModel).order_by(MovimientoInventarioModel.created_at.desc())
+        stmt = select(MovimientoInventarioModel).order_by(
+            MovimientoInventarioModel.created_at.desc(), MovimientoInventarioModel.id.desc()
+        )
         if producto_id is not None:
             stmt = stmt.where(MovimientoInventarioModel.producto_id == producto_id)
         if tipo:
@@ -645,6 +649,8 @@ class SqlAlchemyMovimientoInventarioRepository:
             usuario_id=row.usuario_id,
             observaciones=row.observaciones,
             created_at=row.created_at,
+            no_vendible_anterior=row.no_vendible_anterior,
+            no_vendible_nuevo=row.no_vendible_nuevo,
         )
 
 

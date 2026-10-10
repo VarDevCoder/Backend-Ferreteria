@@ -77,6 +77,10 @@ class TipoMovimientoInventario(StrEnum):
     ENTRADA = "ENTRADA"
     SALIDA = "SALIDA"
     AJUSTE = "AJUSTE"
+    # Paso entre stock vendible y no vendible (el total físico no cambia).
+    TRASPASO = "TRASPASO"
+    # Baja con pérdida de unidades no vendibles (descarte).
+    BAJA = "BAJA"
 
 
 class TipoReferenciaMovimiento(StrEnum):
@@ -86,6 +90,8 @@ class TipoReferenciaMovimiento(StrEnum):
     ORDEN_ENVIO = "ORDEN_ENVIO"
     AJUSTE_MANUAL = "AJUSTE_MANUAL"
     VENTA_MOSTRADOR = "VENTA_MOSTRADOR"
+    STOCK_NO_VENDIBLE = "STOCK_NO_VENDIBLE"    # registro de unidades no vendibles
+    RECLAMO_PROVEEDOR = "RECLAMO_PROVEEDOR"    # resolución de un reclamo al proveedor
 
 
 class EstadoCajaTurno(StrEnum):
@@ -127,3 +133,51 @@ class TipoMovimientoCaja(StrEnum):
 
     INGRESO = "INGRESO"
     RETIRO = "RETIRO"
+
+
+class MotivoNoVendible(StrEnum):
+    """Por qué unas unidades dejan de poder venderse."""
+
+    AVERIADO = "AVERIADO"
+    ABOLLADO = "ABOLLADO"
+    VENCIDO = "VENCIDO"
+    DEFECTO_FABRICA = "DEFECTO_FABRICA"
+    OTRO = "OTRO"  # exige una nota que explique el motivo
+
+
+class EstadoStockNoVendible(StrEnum):
+    """Estado de un registro de unidades no vendibles.
+
+    PENDIENTE: hay unidades sin resolver que no están en ningún reclamo abierto.
+    EN_RECLAMO: todas las unidades sin resolver están en un reclamo abierto.
+    RESUELTO: ya no quedan unidades sin resolver.
+    """
+
+    PENDIENTE = "PENDIENTE"
+    EN_RECLAMO = "EN_RECLAMO"
+    RESUELTO = "RESUELTO"
+
+
+class TipoResolucionNoVendible(StrEnum):
+    """Cómo se resolvieron unidades no vendibles."""
+
+    REPARADO = "REPARADO"                              # vuelven a stock vendible
+    DESCARTADO = "DESCARTADO"                          # baja con pérdida
+    REPUESTO_PROVEEDOR = "REPUESTO_PROVEEDOR"          # el proveedor se las llevó y entregó mercadería nueva
+    NOTA_CREDITO_PROVEEDOR = "NOTA_CREDITO_PROVEEDOR"  # el proveedor se las llevó y emitió nota de crédito
+
+
+class EstadoReclamoProveedor(StrEnum):
+    BORRADOR = "BORRADOR"
+    ENVIADO = "ENVIADO"
+    ACEPTADO = "ACEPTADO"
+    RECHAZADO = "RECHAZADO"
+    RESUELTO = "RESUELTO"
+
+
+class ResolucionItemReclamo(StrEnum):
+    """Respuesta del proveedor para cada ítem de un reclamo aceptado."""
+
+    REPOSICION = "REPOSICION"      # repone la mercadería
+    NOTA_CREDITO = "NOTA_CREDITO"  # emite una nota de crédito por un monto
+    RECHAZADO = "RECHAZADO"        # no acepta ese ítem: las unidades siguen no vendibles
