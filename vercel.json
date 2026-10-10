@@ -1,6 +1,14 @@
 {
   "functions": {
-    "api/index.py": { "includeFiles": "{alembic.ini,alembic/**}" }
+    "api/index.py": {
+      "includeFiles": "{alembic.ini,alembic/**}",
+      "maxDuration": 60
+    }
   },
-  "rewrites": [{ "source": "/(.*)", "destination": "/api/index" }]
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/api/index"
+    }
+  ]
 }

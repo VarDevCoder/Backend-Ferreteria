@@ -28,7 +28,7 @@ from datetime import datetime, time, timedelta
 from decimal import Decimal
 
 from sqlalchemy import func, select, text
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.infrastructure.db.models import (
     CajaTurnoModel,
@@ -154,26 +154,29 @@ def generar_historial(db: Session, usuario_id: int, vendedor_id: int | None = No
             ))
         stock_en_curso[p.id] = inicial
 
-    # 3) Turnos y ventas.
+    # 3) Turnos y ventas. Todo se inserta en lotes (pocas idas y vueltas a la
+    #    base): en Vercel cada consulta viaja hasta Neon y el arranque tiene
+    #    tiempo limitado.
     turno_abierto = db.execute(select(CajaTurnoModel).where(CajaTurnoModel.estado == "ABIERTO")).scalars().first()
     turnos: dict = {}
-    creadas = 0
-    for momento, items, metodo, cliente, descuento in plan:
+    for momento, *_ in plan:
         dia = momento.date()
-        turno = turnos.get(dia)
-        if turno is None:
-            if dia == hoy and turno_abierto is not None:
-                turno = turno_abierto
-            else:
-                turno = CajaTurnoModel(
-                    usuario_id=vendedor_id, fondo_inicial=FONDO_INICIAL, estado="ABIERTO",
-                    fecha_apertura=datetime.combine(dia, time(7, 25)) if dia != hoy else min(momento, ahora) - timedelta(minutes=20),
-                    total_ventas_efectivo=0, total_ventas_tarjeta=0, total_ventas_transferencia=0, total_ventas_a_cuenta=0,
-                )
-                db.add(turno)
-                db.flush()
-            turnos[dia] = turno
+        if dia in turnos:
+            continue
+        if dia == hoy and turno_abierto is not None:
+            turnos[dia] = turno_abierto
+        else:
+            turnos[dia] = CajaTurnoModel(
+                usuario_id=vendedor_id, fondo_inicial=FONDO_INICIAL, estado="ABIERTO",
+                fecha_apertura=datetime.combine(dia, time(7, 25)) if dia != hoy else min(momento, ahora) - timedelta(minutes=20),
+                total_ventas_efectivo=0, total_ventas_tarjeta=0, total_ventas_transferencia=0, total_ventas_a_cuenta=0,
+            )
+            db.add(turnos[dia])
+    db.flush()
 
+    ventas: list[tuple[VentaMostradorModel, list[tuple[ProductoModel, int]]]] = []
+    for creadas, (momento, items, metodo, cliente, descuento) in enumerate(plan):
+        turno = turnos[momento.date()]
         subtotal = sum(int(p.precio_venta) * cantidad for p, cantidad in items)
         total = max(0, subtotal - round(subtotal * descuento / 100))
         venta = VentaMostradorModel(
@@ -186,18 +189,21 @@ def generar_historial(db: Session, usuario_id: int, vendedor_id: int | None = No
         ]
         venta.pagos = [VentaPagoModel(metodo=metodo, monto=total)]
         db.add(venta)
-        db.flush()
+        ventas.append((venta, items))
+        campo = _campo_del_turno(metodo)
+        setattr(turno, campo, (getattr(turno, campo) or 0) + total)
+    db.flush()  # inserta ventas, ítems y pagos en lotes y asigna los id
+
+    for venta, items in ventas:  # el plan ya está en orden cronológico
         for p, cantidad in items:
             anterior = stock_en_curso[p.id]
             stock_en_curso[p.id] = anterior - cantidad
             db.add(MovimientoInventarioModel(
                 producto_id=p.id, tipo="SALIDA", cantidad=cantidad, stock_anterior=anterior, stock_nuevo=stock_en_curso[p.id],
                 referencia_tipo="VENTA_MOSTRADOR", referencia_id=venta.id, usuario_id=vendedor_id,
-                observaciones="Venta de mostrador", created_at=momento,
+                observaciones="Venta de mostrador", created_at=venta.created_at,
             ))
-        campo = _campo_del_turno(metodo)
-        setattr(turno, campo, (getattr(turno, campo) or 0) + total)
-        creadas += 1
+    creadas = len(ventas)
 
     # 4) Cierre de turnos pasados: algún retiro y arqueo.
     for dia, turno in turnos.items():
@@ -279,7 +285,10 @@ def completar_medios_de_pago(db: Session, usuario_id: int, semilla: int = 2026) 
     ahora: datetime = db.execute(select(func.now())).scalar_one().replace(tzinfo=None)
 
     ventas = db.execute(
-        select(VentaMostradorModel).where(VentaMostradorModel.metodo_pago.in_(NO_EFECTIVO)).order_by(VentaMostradorModel.created_at)
+        select(VentaMostradorModel)
+        .where(VentaMostradorModel.metodo_pago.in_(NO_EFECTIVO))
+        .options(selectinload(VentaMostradorModel.pagos))
+        .order_by(VentaMostradorModel.created_at)
     ).scalars().all()
     turnos = {t.id: t for t in db.execute(select(CajaTurnoModel)).scalars()}
 
