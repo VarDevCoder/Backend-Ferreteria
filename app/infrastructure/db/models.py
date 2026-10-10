@@ -13,6 +13,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     Numeric,
     String,
@@ -29,10 +30,12 @@ class Base(DeclarativeBase):
 
 class UsuarioModel(Base):
     __tablename__ = "usuarios"
+    # Como lo crea la migración inicial: restricción UNIQUE más un índice aparte.
+    __table_args__ = (Index("ix_usuarios_email", "email"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(255))
-    email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    email: Mapped[str] = mapped_column(String(255), unique=True)
     password_hash: Mapped[str] = mapped_column(String(255))
     rol: Mapped[str] = mapped_column(String(20), default="vendedor")
     activo: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -86,10 +89,12 @@ class CategoriaModel(Base):
 
 class ProductoModel(Base):
     __tablename__ = "productos"
+    # Como lo crea la migración inicial: restricción UNIQUE más un índice aparte.
+    __table_args__ = (Index("ix_productos_codigo", "codigo"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     categoria_id: Mapped[int | None] = mapped_column(ForeignKey("categorias.id", ondelete="SET NULL"), nullable=True)
-    codigo: Mapped[str] = mapped_column(String(50), unique=True, index=True)
+    codigo: Mapped[str] = mapped_column(String(50), unique=True)
     nombre: Mapped[str] = mapped_column(String(255), index=True)
     descripcion: Mapped[str | None] = mapped_column(Text, nullable=True)
     precio_compra: Mapped[int] = mapped_column(Integer, default=0)
@@ -314,6 +319,7 @@ class OrdenEnvioItemModel(Base):
 
 class MovimientoInventarioModel(Base):
     __tablename__ = "movimientos_inventario"
+    __table_args__ = (Index("ix_movimientos_inventario_referencia", "referencia_tipo", "referencia_id"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     producto_id: Mapped[int] = mapped_column(ForeignKey("productos.id", ondelete="RESTRICT"), index=True)
