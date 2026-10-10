@@ -3,9 +3,9 @@
 El despacho valida stock antes de descontar (RF14) y cada salida/devolución
 deja su movimiento en el Kardex, igual que la recepción de compra.
 """
-from datetime import date
 from decimal import Decimal
 
+from app.core.tiempo import hoy
 from app.domain.entities import MovimientoInventario, OrdenEnvio, OrdenEnvioItem
 from app.domain.enums import EstadoOrdenEnvio, EstadoPedidoCliente, TipoMovimientoInventario, TipoReferenciaMovimiento
 from app.domain.exceptions import (
@@ -72,7 +72,7 @@ class OrdenEnvioService:
             direccion_entrega=direccion_entrega,
             contacto_entrega=contacto_entrega,
             telefono_entrega=telefono_entrega,
-            fecha_generacion=date.today(),
+            fecha_generacion=hoy(),
             metodo_envio=metodo_envio,
             transportista=transportista,
             notas=notas,
@@ -135,7 +135,7 @@ class OrdenEnvioService:
             )
 
         orden.estado = EstadoOrdenEnvio.EN_TRANSITO
-        orden.fecha_envio = date.today()
+        orden.fecha_envio = hoy()
         orden.numero_guia = numero_guia
         orden = self._ordenes.update(orden)
 
@@ -151,7 +151,7 @@ class OrdenEnvioService:
         if not orden.puede_ser_entregada():
             raise TransicionDeEstadoInvalida("Esta orden no puede ser marcada como entregada")
         orden.estado = EstadoOrdenEnvio.ENTREGADO
-        orden.fecha_entrega = date.today()
+        orden.fecha_entrega = hoy()
         orden.observaciones_entrega = observaciones
         orden = self._ordenes.update(orden)
 

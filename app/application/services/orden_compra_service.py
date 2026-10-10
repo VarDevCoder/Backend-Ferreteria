@@ -4,6 +4,7 @@ stock, dispara movimientos de inventario y cascada el estado del pedido."""
 from datetime import date
 from decimal import Decimal
 
+from app.core.tiempo import hoy
 from app.domain.entities import MovimientoInventario, OrdenCompra, OrdenCompraItem
 from app.domain.enums import EstadoOrdenCompra, EstadoPedidoCliente, TipoMovimientoInventario, TipoReferenciaMovimiento
 from app.domain.exceptions import RecursoNoEncontrado, TransicionDeEstadoInvalida
@@ -61,7 +62,7 @@ class OrdenCompraService:
             proveedor_telefono=proveedor_telefono,
             proveedor_email=proveedor_email,
             proveedor_direccion=proveedor_direccion,
-            fecha_orden=date.today(),
+            fecha_orden=hoy(),
             fecha_entrega_esperada=fecha_entrega_esperada,
             estado=EstadoOrdenCompra.BORRADOR,
             descuento=descuento,
@@ -180,7 +181,7 @@ class OrdenCompraService:
 
         if orden.verificar_recepcion_completa():
             orden.estado = EstadoOrdenCompra.RECIBIDA_COMPLETA
-            orden.fecha_recepcion = date.today()
+            orden.fecha_recepcion = hoy()
             if orden.pedido_cliente_id is not None:
                 pedido = self._pedidos.get_by_id(orden.pedido_cliente_id)
                 if pedido is not None:

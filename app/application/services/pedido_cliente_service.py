@@ -3,6 +3,7 @@
 from datetime import date
 from decimal import Decimal
 
+from app.core.tiempo import hoy
 from app.domain.entities import PedidoCliente, PedidoClienteItem, SolicitudPresupuesto, SolicitudPresupuestoItem
 from app.domain.enums import EstadoPedidoCliente, EstadoSolicitudPresupuesto
 from app.application.services.caja_service import validar_descuento
@@ -80,7 +81,7 @@ class PedidoClienteService:
             cliente_telefono=cliente_telefono,
             cliente_email=cliente_email,
             cliente_direccion=cliente_direccion,
-            fecha_pedido=fecha_pedido or date.today(),
+            fecha_pedido=fecha_pedido or hoy(),
             fecha_entrega_solicitada=fecha_entrega_solicitada,
             estado=EstadoPedidoCliente.RECIBIDO,
             descuento=descuento,
@@ -234,7 +235,7 @@ class PedidoClienteService:
                 proveedor_id=proveedor.id,
                 usuario_id=usuario_id,
                 pedido_cliente_id=pedido_id,
-                fecha_solicitud=date.today(),
+                fecha_solicitud=hoy(),
                 estado=EstadoSolicitudPresupuesto.ENVIADA,
                 mensaje_solicitud=f"Solicitud de cotización generada automáticamente desde {pedido.numero}.",
                 items=[

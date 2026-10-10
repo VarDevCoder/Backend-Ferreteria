@@ -30,6 +30,7 @@ from decimal import Decimal
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session, selectinload
 
+from app.core.tiempo import local_a_utc, zona
 from app.infrastructure.db.models import (
     CajaTurnoModel,
     ClienteModel,
@@ -100,8 +101,10 @@ def generar_historial(db: Session, usuario_id: int, vendedor_id: int | None = No
     clientes = db.execute(select(ClienteModel.id).where(ClienteModel.activo.is_(True))).scalars().all()
     pesos = [_peso_de_venta(p) for p in productos]
 
-    # Reloj de la base (el mismo que usa la app para "hoy").
-    ahora: datetime = db.execute(select(func.now())).scalar_one().replace(tzinfo=None)
+    # Reloj de la base, en la hora de la ferretería: el plan (días, horario de
+    # 7:30 a 18:30) se arma en hora local y se guarda en UTC (local_a_utc),
+    # como todo `created_at`.
+    ahora: datetime = db.execute(select(func.now())).scalar_one().astimezone(zona()).replace(tzinfo=None)
     hoy = ahora.date()
     inicio = hoy - timedelta(days=DIAS_DE_HISTORIAL)
 
@@ -137,7 +140,7 @@ def generar_historial(db: Session, usuario_id: int, vendedor_id: int | None = No
     for _, items, *_ in plan:
         for p, cantidad in items:
             vendido[p.id] = vendido.get(p.id, Decimal(0)) + cantidad
-    momento_inicial = datetime.combine(inicio, time(7, 0))
+    momento_inicial = local_a_utc(datetime.combine(inicio, time(7, 0)))
     # Los movimientos que ya existían (p. ej. el inventario inicial del seed,
     # fechado hoy) pasan a antes del historial, conservando su orden: si no,
     # el kardex quedaría desordenado respecto del stock.
@@ -175,7 +178,7 @@ def generar_historial(db: Session, usuario_id: int, vendedor_id: int | None = No
         else:
             turnos[dia] = CajaTurnoModel(
                 usuario_id=vendedor_id, fondo_inicial=FONDO_INICIAL, estado="ABIERTO",
-                fecha_apertura=datetime.combine(dia, time(7, 25)) if dia != hoy else min(momento, ahora) - timedelta(minutes=20),
+                fecha_apertura=local_a_utc(datetime.combine(dia, time(7, 25)) if dia != hoy else min(momento, ahora) - timedelta(minutes=20)),
                 total_ventas_efectivo=0, total_ventas_tarjeta=0, total_ventas_transferencia=0, total_ventas_a_cuenta=0,
             )
             db.add(turnos[dia])
@@ -188,7 +191,7 @@ def generar_historial(db: Session, usuario_id: int, vendedor_id: int | None = No
         total = max(0, subtotal - round(subtotal * descuento / 100))
         venta = VentaMostradorModel(
             numero=f"TMP-DEMO-{creadas}", caja_turno_id=turno.id, usuario_id=vendedor_id, cliente_id=cliente,
-            metodo_pago=metodo, subtotal=subtotal, descuento=descuento, total=total, created_at=momento,
+            metodo_pago=metodo, subtotal=subtotal, descuento=descuento, total=total, created_at=local_a_utc(momento),
         )
         venta.items = [
             VentaMostradorItemModel(producto_id=p.id, cantidad=cantidad, precio_unitario=int(p.precio_venta), subtotal=int(p.precio_venta) * cantidad)
@@ -221,12 +224,12 @@ def generar_historial(db: Session, usuario_id: int, vendedor_id: int | None = No
             retiro = 500_000
             db.add(MovimientoCajaModel(
                 caja_turno_id=turno.id, tipo="RETIRO", monto=retiro, motivo="Depósito en banco", usuario_id=usuario_id,
-                created_at=datetime.combine(dia, time(14, 0)),
+                created_at=local_a_utc(datetime.combine(dia, time(14, 0))),
             ))
         esperado = FONDO_INICIAL + (turno.total_ventas_efectivo or 0) - retiro
         diferencia = rng.choice([0] * 9 + [-5_000, 2_000])
         turno.estado = "CERRADO"
-        turno.fecha_cierre = datetime.combine(dia, time(18, 45))
+        turno.fecha_cierre = local_a_utc(datetime.combine(dia, time(18, 45)))
         turno.conteo_fisico = esperado + diferencia
         turno.diferencia = diferencia
 
@@ -241,12 +244,15 @@ def generar_historial(db: Session, usuario_id: int, vendedor_id: int | None = No
         UPDATE ventas_mostrador v
         SET numero = 'VTA-' || n.anio || '-' || LPAD(n.correlativo::text, 4, '0')
         FROM (
-            SELECT id, EXTRACT(YEAR FROM created_at)::int AS anio,
-                   ROW_NUMBER() OVER (PARTITION BY EXTRACT(YEAR FROM created_at) ORDER BY created_at, id) AS correlativo
+            SELECT id, EXTRACT(YEAR FROM timezone(:zona, timezone('UTC', created_at)))::int AS anio,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY EXTRACT(YEAR FROM timezone(:zona, timezone('UTC', created_at)))
+                       ORDER BY created_at, id
+                   ) AS correlativo
             FROM ventas_mostrador
         ) n
         WHERE v.id = n.id
-    """))
+    """), {"zona": zona().key})
     return creadas
 
 

@@ -41,6 +41,10 @@ class Settings(BaseSettings):
     # al sistema pide crear la empresa y el usuario administrador.
     seed_demo: bool = False
 
+    # Zona horaria de la ferretería: define qué es "hoy" (ventas del día,
+    # reportes por día, numeración por año). Paraguay: UTC-3 todo el año.
+    zona_horaria: str = "America/Asuncion"
+
     @property
     def es_produccion(self) -> bool:
         return self.environment.lower() == "production"

@@ -6,6 +6,7 @@ de Compra en una única operación atómica) — el caso de uso central del MVP.
 """
 from datetime import date
 
+from app.core.tiempo import hoy
 from app.domain.entities import OrdenCompra, OrdenCompraItem, SolicitudPresupuesto, SolicitudPresupuestoItem
 from app.domain.enums import EstadoOrdenCompra, EstadoPedidoCliente, EstadoSolicitudPresupuesto
 from app.domain.exceptions import PermisoDenegado, RecursoNoEncontrado, TransicionDeEstadoInvalida
@@ -56,7 +57,7 @@ class SolicitudPresupuestoService:
             proveedor_id=proveedor_id,
             usuario_id=usuario_id,
             pedido_cliente_id=pedido_cliente_id,
-            fecha_solicitud=date.today(),
+            fecha_solicitud=hoy(),
             fecha_limite_respuesta=fecha_limite_respuesta,
             estado=EstadoSolicitudPresupuesto.ENVIADA,
             mensaje_solicitud=mensaje_solicitud,
@@ -131,7 +132,7 @@ class SolicitudPresupuestoService:
         )
         solicitud.respuesta_proveedor = respuesta_proveedor
         solicitud.dias_entrega_estimados = dias_entrega_estimados
-        solicitud.fecha_respuesta = date.today()
+        solicitud.fecha_respuesta = hoy()
         return self._solicitudes.update(solicitud)
 
     def marcar_sin_stock(self, solicitud_id: int, proveedor_id: int, respuesta_proveedor: str) -> SolicitudPresupuesto:
@@ -146,7 +147,7 @@ class SolicitudPresupuestoService:
 
         solicitud.estado = EstadoSolicitudPresupuesto.SIN_STOCK
         solicitud.respuesta_proveedor = respuesta_proveedor
-        solicitud.fecha_respuesta = date.today()
+        solicitud.fecha_respuesta = hoy()
         return self._solicitudes.update(solicitud)
 
     # --- Decisión de Compras (CU-13 ★) ---------------------------------------------
@@ -181,7 +182,7 @@ class SolicitudPresupuestoService:
             proveedor_telefono=proveedor.telefono,
             proveedor_email=proveedor.email,
             proveedor_direccion=proveedor.direccion,
-            fecha_orden=date.today(),
+            fecha_orden=hoy(),
             estado=EstadoOrdenCompra.BORRADOR,
             items=items_orden,
         )

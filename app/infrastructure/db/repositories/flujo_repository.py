@@ -10,6 +10,8 @@ from __future__ import annotations
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
+from app.infrastructure.db.tiempo_sql import anio_actual_sql, anio_local, fecha_local, hoy_sql
+
 from app.domain.entities import (
     CajaTurno,
     MovimientoCaja,
@@ -53,6 +55,15 @@ from app.infrastructure.db.models import (
     VentaMostradorModel,
     VentaPagoModel,
 )
+
+
+def siguiente_numero(session: Session, modelo, prefijo: str) -> str:
+    """Próximo número correlativo del año (en la hora de la empresa): PREFIJO-AAAA-NNNN."""
+    anio = int(session.execute(select(anio_actual_sql())).scalar_one())
+    cantidad = session.execute(
+        select(func.count()).select_from(modelo).where(anio_local(modelo.created_at) == anio)
+    ).scalar_one()
+    return f"{prefijo}-{anio}-{cantidad + 1:04d}"
 
 
 class SqlAlchemyPedidoClienteRepository:
@@ -156,12 +167,7 @@ class SqlAlchemyPedidoClienteRepository:
             self._session.flush()
 
     def siguiente_numero(self) -> str:
-        anio = int(self._session.execute(select(func.extract("year", func.current_date()))).scalar_one())
-        stmt = select(func.count()).select_from(PedidoClienteModel).where(
-            func.extract("year", PedidoClienteModel.created_at) == anio
-        )
-        cantidad = self._session.execute(stmt).scalar_one()
-        return f"PED-{anio}-{cantidad + 1:04d}"
+        return siguiente_numero(self._session, PedidoClienteModel, "PED")
 
     def contar_activos(self) -> int:
         stmt = select(func.count()).select_from(PedidoClienteModel).where(
@@ -171,7 +177,7 @@ class SqlAlchemyPedidoClienteRepository:
 
     def contar_creados_hoy(self) -> int:
         stmt = select(func.count()).select_from(PedidoClienteModel).where(
-            func.date(PedidoClienteModel.created_at) == func.current_date()
+            fecha_local(PedidoClienteModel.created_at) == hoy_sql()
         )
         return self._session.execute(stmt).scalar_one()
 
@@ -286,13 +292,7 @@ class SqlAlchemySolicitudPresupuestoRepository:
             self._session.flush()
 
     def siguiente_numero(self) -> str:
-        anio = self._session.execute(select(func.extract("year", func.current_date()))).scalar_one()
-        anio = int(anio)
-        stmt = select(func.count()).select_from(SolicitudPresupuestoModel).where(
-            func.extract("year", SolicitudPresupuestoModel.created_at) == anio
-        )
-        cantidad = self._session.execute(stmt).scalar_one()
-        return f"SP-{anio}-{cantidad + 1:04d}"
+        return siguiente_numero(self._session, SolicitudPresupuestoModel, "SP")
 
     def existe_activa(self, pedido_cliente_id: int, proveedor_id: int) -> bool:
         stmt = select(SolicitudPresupuestoModel.id).where(
@@ -448,12 +448,7 @@ class SqlAlchemyOrdenCompraRepository:
             self._session.flush()
 
     def siguiente_numero(self) -> str:
-        anio = int(self._session.execute(select(func.extract("year", func.current_date()))).scalar_one())
-        stmt = select(func.count()).select_from(OrdenCompraModel).where(
-            func.extract("year", OrdenCompraModel.created_at) == anio
-        )
-        cantidad = self._session.execute(stmt).scalar_one()
-        return f"OC-{anio}-{cantidad + 1:04d}"
+        return siguiente_numero(self._session, OrdenCompraModel, "OC")
 
     def contar_activas(self) -> int:
         stmt = select(func.count()).select_from(OrdenCompraModel).where(
@@ -556,12 +551,7 @@ class SqlAlchemyOrdenEnvioRepository:
             self._session.flush()
 
     def siguiente_numero(self) -> str:
-        anio = int(self._session.execute(select(func.extract("year", func.current_date()))).scalar_one())
-        stmt = select(func.count()).select_from(OrdenEnvioModel).where(
-            func.extract("year", OrdenEnvioModel.created_at) == anio
-        )
-        cantidad = self._session.execute(stmt).scalar_one()
-        return f"ENV-{anio}-{cantidad + 1:04d}"
+        return siguiente_numero(self._session, OrdenEnvioModel, "ENV")
 
     def contar_pendientes(self) -> int:
         stmt = select(func.count()).select_from(OrdenEnvioModel).where(
@@ -808,22 +798,17 @@ class SqlAlchemyVentaMostradorRepository:
         return self._to_entity(row)
 
     def siguiente_numero(self) -> str:
-        anio = int(self._session.execute(select(func.extract("year", func.current_date()))).scalar_one())
-        stmt = select(func.count()).select_from(VentaMostradorModel).where(
-            func.extract("year", VentaMostradorModel.created_at) == anio
-        )
-        cantidad = self._session.execute(stmt).scalar_one()
-        return f"VTA-{anio}-{cantidad + 1:04d}"
+        return siguiente_numero(self._session, VentaMostradorModel, "VTA")
 
     def contar_hoy(self) -> int:
         stmt = select(func.count()).select_from(VentaMostradorModel).where(
-            func.date(VentaMostradorModel.created_at) == func.current_date()
+            fecha_local(VentaMostradorModel.created_at) == hoy_sql()
         )
         return self._session.execute(stmt).scalar_one()
 
     def total_hoy(self) -> int:
         stmt = select(func.coalesce(func.sum(VentaMostradorModel.total), 0)).where(
-            func.date(VentaMostradorModel.created_at) == func.current_date()
+            fecha_local(VentaMostradorModel.created_at) == hoy_sql()
         )
         return self._session.execute(stmt).scalar_one()
 

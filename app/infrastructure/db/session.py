@@ -3,7 +3,7 @@ import ssl
 from collections.abc import Generator
 from typing import Any
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.engine import URL, make_url
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -35,6 +35,18 @@ settings = get_settings()
 
 _url, _connect_args = engine_args(settings.database_url)
 engine = create_engine(_url, connect_args=_connect_args, pool_pre_ping=True, future=True)
+
+
+@event.listens_for(engine, "connect")
+def _sesion_en_utc(conexion_dbapi, _registro) -> None:
+    """La base guarda los momentos (`now()`) en UTC, sea cual sea la zona del
+    servidor de Postgres; la hora local se calcula al consultar."""
+    cursor = conexion_dbapi.cursor()
+    cursor.execute("SET TIME ZONE 'UTC'")
+    cursor.close()
+    conexion_dbapi.commit()  # si no, un rollback posterior desharía el SET
+
+
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
 
 

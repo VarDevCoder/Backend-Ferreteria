@@ -2,6 +2,7 @@
 y productos más vendidos."""
 from datetime import date, timedelta
 
+from app.core.tiempo import hoy
 from app.domain.exceptions import SolicitudInvalida
 
 MAX_DIAS = 366
@@ -12,7 +13,7 @@ class ReporteService:
         self._reportes = reportes
 
     def ventas(self, desde: date | None, hasta: date | None, limite_productos: int = 10) -> dict:
-        hasta = hasta or date.today()
+        hasta = hasta or hoy()
         desde = desde or hasta.replace(day=1)
         if desde > hasta:
             raise SolicitudInvalida("La fecha 'desde' no puede ser posterior a 'hasta'")

@@ -1,8 +1,11 @@
 """Consultas de agregación para reportes de ventas. Solo lectura."""
 from datetime import date, datetime, time, timedelta
 
-from sqlalchemy import Date, Numeric, cast, func, select
+from sqlalchemy import Numeric, cast, func, select
 from sqlalchemy.orm import Session
+
+from app.core.tiempo import local_a_utc
+from app.infrastructure.db.tiempo_sql import fecha_local
 
 from app.infrastructure.db.models import (
     PedidoClienteModel,
@@ -14,8 +17,12 @@ from app.infrastructure.db.models import (
 
 
 def _rango(desde: date, hasta: date) -> tuple[datetime, datetime]:
-    """[desde 00:00, hasta+1 00:00): incluye el día `hasta` completo."""
-    return datetime.combine(desde, time.min), datetime.combine(hasta + timedelta(days=1), time.min)
+    """[desde 00:00, hasta+1 00:00) en la hora de la empresa, convertido a
+    UTC (como se guarda `created_at`): incluye el día `hasta` completo."""
+    return (
+        local_a_utc(datetime.combine(desde, time.min)),
+        local_a_utc(datetime.combine(hasta + timedelta(days=1), time.min)),
+    )
 
 
 class SqlAlchemyReporteRepository:
@@ -37,7 +44,7 @@ class SqlAlchemyReporteRepository:
 
     def ventas_por_dia(self, desde: date, hasta: date) -> list[dict]:
         inicio, fin = _rango(desde, hasta)
-        dia = cast(VentaMostradorModel.created_at, Date)
+        dia = fecha_local(VentaMostradorModel.created_at)
         stmt = (
             select(dia, func.count(), func.coalesce(func.sum(VentaMostradorModel.total), 0))
             .where(VentaMostradorModel.created_at >= inicio, VentaMostradorModel.created_at < fin)

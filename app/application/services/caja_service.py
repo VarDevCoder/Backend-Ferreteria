@@ -5,10 +5,10 @@ y se va. Eso exige un turno de caja abierto (RF: no se puede vender sin caja
 abierta), descuenta stock igual que una orden de envío, y el turno se cierra
 con arqueo (conteo físico vs. lo que el sistema esperaba encontrar).
 """
-from datetime import datetime
 from decimal import Decimal
 
 from app.application.services.cuenta_corriente_service import CuentaCorrienteService
+from app.core.tiempo import ahora_utc
 from app.domain.entities import CajaTurno, MovimientoCaja, MovimientoInventario, VentaMostrador, VentaMostradorItem, VentaPago
 from app.domain.enums import MetodoPago, TipoMovimientoCaja, TipoMovimientoInventario, TipoReferenciaMovimiento
 from app.domain.exceptions import (
@@ -93,7 +93,7 @@ class CajaService:
 
         turno.calcular_cierre(conteo_fisico)
         turno.notas = notas
-        turno.fecha_cierre = datetime.now()
+        turno.fecha_cierre = ahora_utc()
         return self._turnos.update(turno)
 
     # --- Ventas de mostrador -------------------------------------------------

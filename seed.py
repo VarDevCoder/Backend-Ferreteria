@@ -16,7 +16,6 @@ Uso:
 from __future__ import annotations
 
 import sys
-from datetime import date
 
 from sqlalchemy import text
 
@@ -27,6 +26,7 @@ from app.application.services.pedido_cliente_service import PedidoClienteService
 from app.application.services.solicitud_presupuesto_service import SolicitudPresupuestoService
 from app.application.services.inventario_service import InventarioService
 from app.core.config import get_settings
+from app.core.tiempo import hoy
 from app.domain.entities import Empresa, Usuario
 from app.domain.enums import RolUsuario
 from app.infrastructure.db.models import Base
@@ -207,7 +207,7 @@ def main(migrar: bool = True) -> None:
                     {"producto_id": productos_creados[0].id, "cantidad": 10, "precio_unitario": productos_creados[0].precio_venta},
                     {"producto_id": productos_creados[2].id, "cantidad": 5, "precio_unitario": productos_creados[2].precio_venta},
                 ],
-                cliente_id=cliente_1.id, fecha_pedido=date.today(), notas="Pedido de ejemplo para la demo",
+                cliente_id=cliente_1.id, fecha_pedido=hoy(), notas="Pedido de ejemplo para la demo",
             )
             print(f"Pedido demo creado: {pedido_demo.numero}")
 
@@ -259,7 +259,7 @@ def main(migrar: bool = True) -> None:
                 ]
                 if not items:
                     continue
-                pedido = pedidos.crear(usuario_id=demo_user.id, items=items, cliente_id=cliente.id, fecha_pedido=date.today())
+                pedido = pedidos.crear(usuario_id=demo_user.id, items=items, cliente_id=cliente.id, fecha_pedido=hoy())
                 orden = envios.crear(
                     usuario_id=demo_user.id, pedido_cliente_id=pedido.id, direccion_entrega=cliente.direccion or "A coordinar",
                     items=[{"producto_id": i["producto_id"], "cantidad": i["cantidad"]} for i in items],

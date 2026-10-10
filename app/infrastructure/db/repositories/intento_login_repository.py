@@ -1,7 +1,8 @@
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from sqlalchemy import delete, func, select
 
+from app.core.tiempo import ahora_utc
 from app.infrastructure.db.models import IntentoLoginFallidoModel
 from app.infrastructure.db.session import SessionLocal
 
@@ -12,7 +13,7 @@ class SqlAlchemyIntentoLoginRepository:
     request haga rollback)."""
 
     def contar_recientes(self, email: str, ventana_segundos: int) -> int:
-        desde = datetime.now() - timedelta(seconds=ventana_segundos)
+        desde = ahora_utc() - timedelta(seconds=ventana_segundos)
         with SessionLocal() as db:
             return db.execute(
                 select(func.count()).select_from(IntentoLoginFallidoModel).where(
@@ -22,12 +23,12 @@ class SqlAlchemyIntentoLoginRepository:
 
     def registrar_fallo(self, email: str) -> None:
         with SessionLocal() as db:
-            db.add(IntentoLoginFallidoModel(email=email, created_at=datetime.now()))
+            db.add(IntentoLoginFallidoModel(email=email, created_at=ahora_utc()))
             db.commit()
 
     def limpiar(self, email: str, mas_viejos_que_segundos: int) -> None:
         """Borra los intentos de este email y, de paso, los vencidos de todos."""
-        limite = datetime.now() - timedelta(seconds=mas_viejos_que_segundos)
+        limite = ahora_utc() - timedelta(seconds=mas_viejos_que_segundos)
         with SessionLocal() as db:
             db.execute(delete(IntentoLoginFallidoModel).where(
                 (IntentoLoginFallidoModel.email == email) | (IntentoLoginFallidoModel.created_at < limite)
