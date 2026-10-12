@@ -62,7 +62,11 @@ from app.infrastructure.db.repositories.usuario_repository import SqlAlchemyUsua
 from app.infrastructure.db.session import get_db
 from app.infrastructure.security.tokens import leer_token
 
-DbSession = Annotated[Session, Depends(get_db)]
+# scope="function": el commit de get_db corre al terminar el endpoint y ANTES
+# de mandar la respuesta. Con el scope por defecto ("request") FastAPI lo
+# corre después de responder: el cliente podía recibir "guardado" antes de que
+# lo estuviera, y un error al commitear no le llegaba nunca.
+DbSession = Annotated[Session, Depends(get_db, scope="function")]
 
 
 # --- Repositorios ---------------------------------------------------------------
