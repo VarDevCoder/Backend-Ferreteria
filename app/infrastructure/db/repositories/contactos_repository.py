@@ -4,6 +4,7 @@ from __future__ import annotations
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
+from app.infrastructure.db.repositories.catalogo_repository import patron_like, sin_tildes_sql
 from app.domain.entities import Cliente, Proveedor, ProveedorProducto
 from app.infrastructure.db.models import (
     ClienteModel,
@@ -24,12 +25,13 @@ class SqlAlchemyClienteRepository:
     ) -> list[Cliente]:
         stmt = select(ClienteModel).order_by(ClienteModel.nombre)
         if busqueda:
-            patron = f"%{busqueda}%"
+            # Sin importar tildes ni mayúsculas ("benitez" encuentra "Benítez").
+            patron = patron_like(busqueda.strip())
             stmt = stmt.where(
-                ClienteModel.nombre.ilike(patron)
-                | ClienteModel.ruc.ilike(patron)
-                | ClienteModel.email.ilike(patron)
-                | ClienteModel.telefono.ilike(patron)
+                sin_tildes_sql(ClienteModel.nombre).like(patron, escape="\\")
+                | sin_tildes_sql(ClienteModel.ruc).like(patron, escape="\\")
+                | sin_tildes_sql(ClienteModel.email).like(patron, escape="\\")
+                | sin_tildes_sql(ClienteModel.telefono).like(patron, escape="\\")
             )
         if activo is not None:
             stmt = stmt.where(ClienteModel.activo.is_(activo))

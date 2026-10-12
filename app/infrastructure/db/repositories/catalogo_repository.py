@@ -1,6 +1,8 @@
 """Repositorios de Categoría y Producto (el catálogo)."""
 from __future__ import annotations
 
+import unicodedata
+
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -16,6 +18,31 @@ from app.infrastructure.db.models import (
     VentaMostradorItemModel,
 )
 
+
+
+# Búsqueda sin tildes: "bulon" encuentra "Bulón" y "nino" encuentra "Niño".
+# Se hace con translate() de SQL (sin extensiones de Postgres, así funciona
+# igual en Neon y en la instalación de Windows). Incluye las mayúsculas
+# acentuadas por si lower() de la base no las convierte.
+_CON_TILDE = "ÁÀÄÂÃÉÈËÊÍÌÏÎÓÒÖÔÕÚÙÜÛÑÇáàäâãéèëêíìïîóòöôõúùüûñç"
+_SIN_TILDE = "aaaaaeeeeiiiiooooouuuuncaaaaaeeeeiiiiooooouuuunc"
+
+
+def sin_tildes_sql(columna):
+    """Expresión SQL: la columna en minúsculas y sin tildes."""
+    return func.translate(func.lower(columna), _CON_TILDE, _SIN_TILDE)
+
+
+def sin_tildes(texto: str) -> str:
+    """El mismo criterio en Python, para el texto que se busca."""
+    descompuesto = unicodedata.normalize("NFD", texto.lower())
+    return "".join(c for c in descompuesto if unicodedata.category(c) != "Mn")
+
+
+def patron_like(palabra: str) -> str:
+    """%palabra% sin tildes, con los comodines escapados."""
+    palabra = sin_tildes(palabra)
+    return "%" + palabra.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
 
 class SqlAlchemyCategoriaRepository:
     def __init__(self, session: Session):
@@ -86,8 +113,11 @@ class SqlAlchemyProductoRepository:
         if categoria_id is not None:
             stmt = stmt.where(ProductoModel.categoria_id == categoria_id)
         if busqueda:
-            patron = f"%{busqueda}%"
-            stmt = stmt.where(ProductoModel.nombre.ilike(patron) | ProductoModel.codigo.ilike(patron))
+            patron = patron_like(busqueda.strip())
+            stmt = stmt.where(
+                sin_tildes_sql(ProductoModel.nombre).like(patron, escape="\\")
+                | sin_tildes_sql(ProductoModel.codigo).like(patron, escape="\\")
+            )
         rows = self._session.execute(stmt).scalars().all()
         return [self._to_entity(r) for r in rows]
 
@@ -95,7 +125,8 @@ class SqlAlchemyProductoRepository:
         """Búsqueda para la caja (solo activos). Un código exacto —lo que manda
         un lector de código de barras— devuelve solo ese producto; si no, cada
         palabra tiene que aparecer en el nombre o el código, en cualquier
-        orden ("tornillo 1" encuentra "Tornillos autorroscantes 1\"")."""
+        orden y sin importar tildes ni mayúsculas ("tornillo 1" encuentra
+        "Tornillos autorroscantes 1\"", "bulon" encuentra "Bulón")."""
         texto = texto.strip()
         if not texto:
             return []
@@ -108,8 +139,11 @@ class SqlAlchemyProductoRepository:
 
         stmt = activos
         for palabra in texto.split():
-            patron = "%" + palabra.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
-            stmt = stmt.where(ProductoModel.nombre.ilike(patron, escape="\\") | ProductoModel.codigo.ilike(patron, escape="\\"))
+            patron = patron_like(palabra)
+            stmt = stmt.where(
+                sin_tildes_sql(ProductoModel.nombre).like(patron, escape="\\")
+                | sin_tildes_sql(ProductoModel.codigo).like(patron, escape="\\")
+            )
         rows = self._session.execute(stmt.order_by(ProductoModel.nombre).limit(limite)).scalars().all()
         return [self._to_entity(r) for r in rows]
 
